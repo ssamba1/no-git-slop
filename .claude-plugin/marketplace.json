@@ -1,0 +1,12 @@
+{
+  "name": "no-git-slop",
+  "description": "Claude Code plugin that keeps git repositories free of AI clutter.",
+  "owner": {"name": "no-git-slop maintainers"},
+  "plugins": [
+    {
+      "name": "no-git-slop",
+      "source": "./",
+      "description": "Blocks stray files, backup copies, status-report markdown, bulk git adds and sloppy commit messages before they reach your repo."
+    }
+  ]
+}

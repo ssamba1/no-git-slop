@@ -1,0 +1,8 @@
+{
+  "name": "no-git-slop",
+  "version": "0.1.0",
+  "description": "Blocks stray files, backup copies, status-report markdown, bulk git adds and sloppy commit messages before they reach your repo.",
+  "license": "MIT",
+  "network": {"hosts": []},
+  "keywords": ["git", "hygiene", "hooks", "conventional-commits", "clean-code"]
+}
