@@ -1,0 +1,26 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: pip install pytest
+      - run: python -m pytest -q
+      - name: Check this repo with its own rules
+        run: |
+          python bin/no-git-slop check --range "$(git rev-list --max-parents=0 HEAD)..HEAD"
+          python bin/no-git-slop commits "$(git rev-list --max-parents=0 HEAD)..HEAD"
