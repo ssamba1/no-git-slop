@@ -1,0 +1,26 @@
+# Copy to .github/workflows/no-git-slop.yml. Catches anything that skipped local hooks.
+name: no-git-slop
+
+on:
+  pull_request:
+
+jobs:
+  hygiene:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install no-git-slop
+        run: pip install "git+https://github.com/OWNER/no-git-slop@v0.1.0"
+
+      - name: New files in this PR
+        run: no-git-slop check --range "origin/${{ github.base_ref }}...HEAD"
+
+      - name: Commit messages in this PR
+        run: no-git-slop commits "origin/${{ github.base_ref }}..HEAD"

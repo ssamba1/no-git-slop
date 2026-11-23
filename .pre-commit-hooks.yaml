@@ -1,0 +1,13 @@
+- id: no-git-slop
+  name: no-git-slop (block clutter files)
+  entry: no-git-slop check --staged
+  language: python
+  pass_filenames: false
+  always_run: true
+  stages: [pre-commit]
+
+- id: no-git-slop-commit-msg
+  name: no-git-slop (commit message)
+  entry: no-git-slop commit-msg
+  language: python
+  stages: [commit-msg]

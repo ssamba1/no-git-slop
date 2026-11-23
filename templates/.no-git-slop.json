@@ -1,0 +1,8 @@
+{
+  "allow": ["docs/adr/*.md"],
+  "deny": [],
+  "scratchDir": ".scratch",
+  "blockBulkAdd": true,
+  "commitStyle": "conventional",
+  "maxSubjectLength": 72
+}
