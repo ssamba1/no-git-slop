@@ -41,10 +41,10 @@ _REPORT_RE = re.compile(r"(^|[_\-. ])(" + "|".join(REPORT_WORDS) + r")([_\-. ]|$
 
 # Suffixes that always mean "a copy of another file" (incl. anthropics/claude-code#11569 list).
 _STRONG_COPY_RE = re.compile(
-    r"[_\-. ](backup|bak|copy|orig|fixed|final|tmp|temp|broken|wip)(\d*)$", re.I)
+    r"[_\-. ](backup|bak|orig|fixed|final|tmp|temp|broken|wip)(\d*)$|[_. ]copy\d*$", re.I)
 # Suffixes that mean a copy only when the unsuffixed sibling already exists.
 _WEAK_COPY_RE = re.compile(
-    r"[_\-. ](v\d+|new|old|updated|improved|refactored|alt|enhanced|better|rewrite|fix|"
+    r"[_\-. ](v\d+|new|old|updated|improved|refactored|alt|enhanced|better|rewrite|fix|copy|"
     r"draft|optimized|optimised|working|\d{8}|\d{4}-\d{2}-\d{2}|\d)$", re.I)
 _BACKUP_EXT = {".bak", ".orig", ".old", ".tmp", ".swp", ".swo", ".rej", ".backup"}
 _COPY_OF_RE = re.compile(r"(^copy of |\s\(\d+\)$| - copy$|\scopy( \d+)?$)", re.I)
@@ -56,10 +56,10 @@ _COPY_DIR_RE = re.compile(
 _SCRIPT_EXT = {".py", ".js", ".mjs", ".cjs", ".ts", ".sh", ".bash", ".rb", ".go", ".php",
                ".ps1", ".pl", ".r", ".jl"}
 _SCRATCH_ANYWHERE_RE = re.compile(
-    r"^(debug|scratch|tmp|temp|try|quick|playground|sandbox|throwaway|adhoc|ad_hoc)"
+    r"^(debug|scratch|tmp|temp|try|playground|sandbox|throwaway|adhoc|ad_hoc)"
     r"([_\-]|$)", re.I)
 _SCRATCH_ROOT_RE = re.compile(
-    r"^(test|tests|check|verify|demo|example|fix|simple|reproduce|repro|investigate|"
+    r"^(test|tests|check|verify|demo|example|fix|simple|quick|reproduce|repro|investigate|"
     r"analyze|analyse|inspect|run_test|manual)([_\-]|$)", re.I)
 
 _JUNK_NAMES = {".ds_store", "thumbs.db", "desktop.ini", "nul", "npm-debug.log",
@@ -106,7 +106,8 @@ def protected_finding(rel: str, config: Config, session=None) -> Optional[Findin
         return Finding("guard-state", config.mode("guard-state"),
                        f"`{rel}` belongs to no-git-slop's own state. Leave it alone.", rel)
     if _matches(rel, GUARD_CONFIG_GLOBS):
-        if intent.user_named(session, rel):
+        # "my vscode settings.json" must not unlock .claude/settings.json: require the path.
+        if intent.user_named(session, rel, by_name=False):
             return None
         return Finding("guard-config", config.mode("guard-config"),
                        f"`{rel}` controls the repo's guardrails. Ask the user before changing it.",
@@ -134,7 +135,8 @@ def _raw_rule(rel: str, root: Path, config: Config, subagent: bool) -> Optional[
 
     # 2. Backup and copy files, including copies parked in folders like NuclearFix/.
     for folder in parts[:-1]:
-        if _COPY_DIR_RE.search(folder) and folder.lower() not in _TEST_DIRS:
+        is_doc_archive = folder.lower().startswith("archive") and ext in (".md", ".rst", ".txt")
+        if _COPY_DIR_RE.search(folder) and folder.lower() not in _TEST_DIRS and not is_doc_archive:
             return Finding("copy-folder", "deny", f"`{rel}` is inside `{folder}/`, which looks "
                            "like a backup or fix-attempt folder. Edit the original file in place.", rel)
     if ext in _BACKUP_EXT or _COPY_OF_RE.search(stem) or _STRONG_COPY_RE.search(stem):
@@ -151,7 +153,10 @@ def _raw_rule(rel: str, root: Path, config: Config, subagent: bool) -> Optional[
     # 3. Status-report documents (IMPLEMENTATION_SUMMARY.md, FIX_NOTES.md ...).
     if ext in {".md", ".txt", ".rst", ".markdown", ".adoc"} and lower not in ROOT_DOC_ALLOW:
         shouty = stem.upper() == stem and any(c.isalpha() for c in stem)
-        if _REPORT_RE.search(stem) and (shouty or len(parts) == 1):
+        # Real docs that share report words: release notes, a TODO list, mdBook's src/SUMMARY.md.
+        legit = stem.lower() in ("release_notes", "release-notes", "todo") or \
+            (stem.lower() == "summary" and len(parts) > 1)
+        if _REPORT_RE.search(stem) and (shouty or len(parts) == 1) and not legit:
             if subagent:
                 reason = (f"`{rel}` is a report file. Do not write report/summary files; "
                           "return the content as text in your final response.")
@@ -160,13 +165,15 @@ def _raw_rule(rel: str, root: Path, config: Config, subagent: bool) -> Optional[
                           "to the user. If it is real documentation, update README.md or a page "
                           "in docs/.")
             return Finding("report-doc", "deny", reason, rel)
-        if len(parts) == 1:
+        if len(parts) == 1 and stem.lower() not in ("release_notes", "release-notes"):
             return Finding("root-doc", "ask", f"New top-level document `{rel}`. Docs usually "
                            "belong in README.md or docs/.", rel)
 
     # 4. Throwaway scripts.
     if ext in _SCRIPT_EXT:
-        if _SCRATCH_ANYWHERE_RE.match(stem) and not _in_tests_dir(parts):
+        # Bare names like src/debug.ts or src/sandbox.py are real modules; debug_auth.py is not.
+        nested_ok = len(parts) > 1 and stem.lower() in ("debug", "sandbox", "playground", "scratch")
+        if _SCRATCH_ANYWHERE_RE.match(stem) and not _in_tests_dir(parts) and not nested_ok:
             return Finding("throwaway-script", "deny", f"`{rel}` looks like a throwaway script. "
                            f"Write it to `{scratch}/{name}` (git-ignored) instead, or make it a "
                            "real test.", rel, actions=[f"write {scratch}/{name}"])

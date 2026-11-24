@@ -10,7 +10,7 @@ from typing import Iterable, List, Optional, Set
 def _git(args: List[str], cwd: Path, stdin: Optional[str] = None, ok_codes=(0,)) -> Optional[str]:
     try:
         out = subprocess.run(["git", *args], cwd=str(cwd), capture_output=True, text=True,
-                             input=stdin, timeout=20)
+                             encoding="utf-8", errors="replace", input=stdin, timeout=20)
     except (OSError, subprocess.SubprocessError):
         return None
     return out.stdout if out.returncode in ok_codes else None
@@ -20,14 +20,30 @@ def _split0(out: Optional[str]) -> List[str]:
     return [p for p in (out or "").split("\0") if p]
 
 
+# Each git spawn costs ~50 ms on Windows; a hook process never moves the repo, so remember these per process.
+_ROOTS: dict = {}
+_GIT_DIRS: dict = {}
+
+
 def repo_root(start: Path) -> Optional[Path]:
-    out = _git(["rev-parse", "--show-toplevel"], start)
-    return Path(out.strip()) if out else None
+    key = str(Path(start))
+    if key not in _ROOTS:
+        lines = (_git(["rev-parse", "--show-toplevel", "--absolute-git-dir"], start) or "").splitlines()
+        if len(lines) < 2:
+            return None
+        _ROOTS[key] = Path(lines[0])
+        _GIT_DIRS[str(Path(lines[0]))] = Path(lines[1])
+    return _ROOTS[key]
 
 
 def git_dir(root: Path) -> Optional[Path]:
-    out = _git(["rev-parse", "--absolute-git-dir"], root)
-    return Path(out.strip()) if out else None
+    key = str(Path(root))
+    if key not in _GIT_DIRS:
+        out = _git(["rev-parse", "--absolute-git-dir"], root)
+        if not out:
+            return None
+        _GIT_DIRS[key] = Path(out.strip())
+    return _GIT_DIRS[key]
 
 
 def untracked_files(root: Path, pathspecs: Iterable[str] = ()) -> List[str]:

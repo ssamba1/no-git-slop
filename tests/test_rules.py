@@ -35,6 +35,9 @@ def decide(path, root):
     "test_login.py",
     ".DS_Store",
     "server.log",
+    "src/parser_copy.py",
+    "quick_check.py",
+    "SUMMARY.md",
 ])
 def test_blocks_slop(repo, path):
     assert decide(path, repo) == "deny"
@@ -54,6 +57,14 @@ def test_blocks_slop(repo, path):
     ".github/workflows/ci.yml",
     "package.json",
     "src/prefix/tree.py",
+    "src/SUMMARY.md",         # mdBook's table of contents
+    "RELEASE_NOTES.md",
+    "docs/RELEASE_NOTES.md",
+    "src/lib/debug.ts",
+    "src/sort/quick_sort.py",
+    "src/sandbox.py",
+    "src/ui/button-copy.tsx",  # no button.tsx sibling
+    "docs/archive/2023.md",
 ])
 def test_allows_real_files(repo, path):
     assert decide(path, repo) == "ok"
@@ -61,6 +72,7 @@ def test_allows_real_files(repo, path):
 
 def test_new_root_doc_asks(repo):
     assert decide("DESIGN.md", repo) == "ask"
+    assert decide("TODO.md", repo) == "ask"
 
 
 def test_weak_suffix_blocked_when_sibling_exists(repo):

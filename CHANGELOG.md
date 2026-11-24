@@ -4,6 +4,20 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Fixed
+
+- Hooks now run on Windows: a `bin/run-hook` launcher picks the first working Python 3.9+ (`python3`, `python` or `py`) instead of calling `python3`, which on Windows is often the Microsoft Store stub. It runs Python with `-I -S` and caches the interpreter in the plugin data folder.
+- Faster hooks: one `git rev-parse` per hook instead of up to four, hook calls skip loading the CLI, and the launcher no longer forks `dirname`. On Windows a Write hook drops from about 600 ms to about 445 ms.
+- The bulk-add message no longer calls every modified file "changed this session".
+- Bash parsing on Windows: `/dev/null` and other rooted paths such as `/tmp/x` are no longer judged as files inside the repo, and Git Bash paths like `/c/repo/x` map to `C:/repo/x`.
+- Shell parser gaps: git commands inside `if`/`for`/`while`/`{ }`/`!`, after a `<<<` here-string, or before a `#` comment containing an apostrophe are now checked. So are `git add -Av`, `git.exe`, `git push -fu`, `git commit .`, `export HUSKY=0 && ...`, `GIT_CONFIG_KEY_n=core.hooksPath` and `timeout -s KILL`.
+- False positives: a commit body line starting with `- ` no longer reads as `-a`/`-n`/`-s`; `git config core.hooksPath` (a read) and `SKIP=check-settings` are allowed; `src/SUMMARY.md`, `RELEASE_NOTES.md`, `src/debug.ts`, `src/sandbox.py`, `quick_sort.py`, `button-copy.tsx` and `docs/archive/*.md` are allowed, and `TODO.md` asks instead of denying.
+- Parallel hooks no longer race on one temp file: a per-session lock makes load and save atomic, and a failed save can no longer swallow a deny.
+- git output is decoded as UTF-8, so repos under paths like `C:\Users\José` are checked instead of silently skipped.
+- no-git-slop's state is guarded in git worktrees too, and naming some other `settings.json` in a prompt no longer unlocks `.claude/settings.json`.
+- CLI: `bin/no-git-slop` and `bin/ngs` start on Windows (they used `python3`); output with a ✗ mark no longer crashes on a cp1252 pipe; a bad revision range is an error instead of a silent pass; `init --hooks` works from a pip install or `python -m`; `archive` refuses paths outside the repo; pip installs get the `ngs` alias.
+- Line endings are pinned to LF so the shell launchers survive a Windows checkout.
+
 ## [0.2.0] - 2026-11-24
 
 ### Added

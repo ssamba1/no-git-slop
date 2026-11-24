@@ -18,7 +18,7 @@ from . import gitutil, intent, shell, state
 from .commits import check_commit_message
 from .config import Config, load_config
 from .findings import Finding, worst
-from .gates import evaluate_bash, evaluate_write, rel_to
+from .gates import evaluate_bash, evaluate_write, rel_to, state_path_finding
 from .integrations import run_all, run_verify
 from .presets import active_presets, is_harness_artifact
 from .rules import judge_new_file
@@ -124,6 +124,9 @@ def on_write(event: dict) -> None:
     if not root:
         return
     rel = rel_to(root, target)
+    if rel is None:
+        _decide_pre_tool(root, None, state_path_finding(root, load_config(root), target), f"pre-{tool}")
+        return
     if not rel:
         return
     session = state.Session(root, state.session_key(event))

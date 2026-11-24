@@ -81,7 +81,8 @@ def run_all(root: Path, configured: Dict[str, str], timeout: int = 300) -> List[
             results.append({"name": name, "status": "skipped", "output": "no changed files to check"})
             continue
         try:
-            proc = subprocess.run(argv, cwd=str(root), capture_output=True, text=True, timeout=timeout)
+            proc = subprocess.run(argv, cwd=str(root), capture_output=True, text=True,
+                                  encoding="utf-8", errors="replace", timeout=timeout)
         except (OSError, subprocess.SubprocessError) as exc:
             results.append({"name": name, "status": "failed", "output": str(exc)})
             continue
@@ -100,7 +101,8 @@ def run_verify(root: Path, command: str, timeout: int) -> dict:
     if not argv:
         return {"status": "skipped", "exit": 0, "output": ""}
     try:
-        proc = subprocess.run(argv, cwd=str(root), capture_output=True, text=True, timeout=timeout)
+        proc = subprocess.run(argv, cwd=str(root), capture_output=True, text=True,
+                              encoding="utf-8", errors="replace", timeout=timeout)
     except subprocess.TimeoutExpired:
         return {"status": "failed", "exit": -1, "output": f"timed out after {timeout}s"}
     except OSError as exc:

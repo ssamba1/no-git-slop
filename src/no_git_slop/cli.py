@@ -31,6 +31,13 @@ def _root() -> Path:
     return root
 
 
+def _valid_range(root: Path, rng: str) -> str:
+    """Exit with an error on a bad revision range instead of silently checking nothing."""
+    if gitutil._git(["rev-list", "-n", "1", rng, "--"], root) is None:
+        sys.exit(f"no-git-slop: git does not know the revision range `{rng}`")
+    return rng
+
+
 def _print_findings(findings, as_json: bool, extra=None) -> int:
     worst = max((ORDER.get(f.decision, 0) for f in findings), default=0)
     if as_json:
@@ -61,7 +68,7 @@ def cmd_check(args) -> int:
         paths = [os.path.relpath(os.path.abspath(p), root).replace(os.sep, "/") for p in args.paths]
         check_ignored = True
     elif args.range:
-        paths, check_ignored = gitutil.files_added_in_range(root, args.range), False
+        paths, check_ignored = gitutil.files_added_in_range(root, _valid_range(root, args.range)), False
     elif args.staged:
         paths, check_ignored = gitutil.staged_new_files(root), False
     else:
@@ -87,7 +94,7 @@ def cmd_commit_msg(args) -> int:
 def cmd_commits(args) -> int:
     root = _root()
     config = load_config(root)
-    messages = gitutil.commit_messages(root, args.range)
+    messages = gitutil.commit_messages(root, _valid_range(root, args.range))
     findings = []
     for sha, body in messages:
         for f in check_commit_message(body, config):
@@ -99,7 +106,7 @@ def cmd_commits(args) -> int:
 
 def cmd_push_check(args) -> int:
     root = _root()
-    rng = args.range or gitutil.unpushed_range(root)
+    rng = _valid_range(root, args.range) if args.range else gitutil.unpushed_range(root)
     if not rng:
         return 0
     return _print_findings(push_violations(root, load_config(root), rng), args.json)
@@ -230,9 +237,13 @@ def cmd_archive(args) -> int:
         if not src.exists():
             print(f"✗ {raw}: not found")
             return 1
+        try:
+            rel = src.relative_to(root.resolve()).as_posix()
+        except ValueError:
+            print(f"✗ {raw}: outside this repository")
+            return 1
         dest = src.parent / "archive" / f"{today}-{src.name}"
         dest.parent.mkdir(parents=True, exist_ok=True)
-        rel = src.relative_to(root).as_posix()
         if rel in tracked or any(t.startswith(rel + "/") for t in tracked):
             subprocess.run(["git", "mv", str(src), str(dest)], cwd=str(root), check=True)
         else:
@@ -270,14 +281,21 @@ def cmd_init(args) -> int:
                   "`no-git-slop commit-msg` and `no-git-slop push-check` to that setup instead.")
             return 0
         gd = gitutil.git_dir(root)
-        exe = str(Path(sys.argv[0]).resolve()) if Path(sys.argv[0]).exists() else "no-git-slop"
+        py = Path(sys.executable).as_posix()
+        script = Path(sys.argv[0])
+        # A real launcher script (bin/no-git-slop, a POSIX pip wrapper) runs as a file; otherwise
+        # (a Windows .exe wrapper, `python -m no_git_slop`) run the installed package.
+        if script.is_file() and script.name != "__main__.py" and script.suffix.lower() != ".exe":
+            run = f'"{py}" "{script.resolve().as_posix()}"'
+        else:
+            run = f'"{py}" -m no_git_slop'
         for name, sub in _HOOK_SCRIPTS.items():
             hook = gd / "hooks" / name
             if hook.exists() and _MARKER not in hook.read_text(encoding="utf-8", errors="replace"):
-                print(f"Skipped {name}: an existing hook is there. Chain `{exe} {sub}` into it.")
+                print(f"Skipped {name}: an existing hook is there. Chain `no-git-slop {sub}` into it.")
                 continue
             hook.parent.mkdir(parents=True, exist_ok=True)
-            hook.write_text(f"#!/bin/sh\n{_MARKER}\nexec \"{sys.executable}\" \"{exe}\" {sub}\n",
+            hook.write_text(f"#!/bin/sh\n{_MARKER}\nexec {run} {sub}\n",
                             encoding="utf-8")
             hook.chmod(hook.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
             print(f"Installed git {name} hook")
@@ -383,5 +401,10 @@ def main(argv=None) -> int:
     p.add_argument("name", choices=sorted(hooks.HANDLERS))
     p.set_defaults(func=lambda a: hooks.run(a.name))
 
+    for stream in (sys.stdout, sys.stderr):
+        try:  # Windows pipes are cp1252; a ✗ mark must not turn a finding into a traceback
+            stream.reconfigure(errors="replace")  # type: ignore[attr-defined]
+        except (AttributeError, ValueError):
+            pass
     args = parser.parse_args(argv)
     return args.func(args)

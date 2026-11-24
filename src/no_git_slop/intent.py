@@ -98,13 +98,14 @@ def allow_code(session, rel: str) -> str:
     return code
 
 
-def user_named(session, rel: str) -> bool:
+def user_named(session, rel: str, by_name: bool = True) -> bool:
+    """Did the user name this file? by_name=False needs the path, not just a matching file name."""
     if session is None:
         return False
     intent = session.intent
     rel = norm(rel)
     base = rel.rsplit("/", 1)[-1]
-    if rel in intent["paths"] or base in intent["basenames"]:
+    if rel in intent["paths"] or (by_name and base in intent["basenames"]):
         return True
     if any(rel.endswith("/" + p) for p in intent["paths"] if "/" in p):
         return True

@@ -11,6 +11,7 @@ agent writes to this folder are blocked by the guard-state rule.
 
 from __future__ import annotations
 
+import atexit
 import json
 import os
 import re
@@ -43,11 +44,63 @@ def session_key(event: dict) -> str:
 
 
 def _write_json(path: Path, data) -> None:
-    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp = path.with_suffix(f"{path.suffix}.{os.getpid()}.tmp")  # one per writer: hooks run in parallel
     fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8") as fh:
         json.dump(data, fh)
-    os.replace(tmp, path)
+    for attempt in range(20):
+        try:
+            os.replace(tmp, path)
+            return
+        except PermissionError:  # Windows: a reader has the file open for a moment
+            if attempt == 19:
+                os.unlink(tmp)
+                raise
+            time.sleep(0.02)
+
+
+_HELD: set = set()
+
+
+def _lock(path: Path) -> None:
+    """Per-session lock so parallel hooks don't lose each other's updates. Never blocks for long."""
+    key = str(path)
+    if key in _HELD:
+        return
+    deadline = time.time() + 5
+    while True:
+        try:
+            os.close(os.open(key, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600))
+            _HELD.add(key)
+            return
+        except FileExistsError:
+            try:
+                if time.time() - os.stat(key).st_mtime > 30:  # left behind by a killed hook
+                    os.unlink(key)
+                    continue
+            except OSError:
+                pass
+            if time.time() > deadline:
+                return  # proceed unlocked rather than stall the user's session
+            time.sleep(0.02)
+        except OSError:
+            return
+
+
+def _unlock(path: Path) -> None:
+    key = str(path)
+    if key in _HELD:
+        _HELD.discard(key)
+        try:
+            os.unlink(key)
+        except OSError:
+            pass
+
+
+@atexit.register
+def _unlock_all() -> None:
+    for key in list(_HELD):
+        _unlock(Path(key))
 
 
 def _read_json(path: Path, default):
@@ -75,6 +128,7 @@ class Session:
             "last_head_checked": "",
         }
         if self.dir:
+            _lock(self._lockfile())  # held until save(), so load-modify-save is atomic
             stored = _read_json(self.dir / f"session-{key}.json", {})
             if isinstance(stored, dict):
                 self.data.update(stored)
@@ -90,9 +144,20 @@ class Session:
             bucket.append(value)
 
     # -- persistence ---------------------------------------------------------
+    def _lockfile(self) -> Path:
+        return self.dir / f"session-{self.key}.lock"
+
     def save(self) -> None:
-        if self.dir:
+        if not self.dir:
+            return
+        lock = self._lockfile()
+        _lock(lock)
+        try:
             _write_json(self.dir / f"session-{self.key}.json", self.data)
+        except OSError:
+            pass  # losing a counter update is fine; losing the hook's decision is not
+        finally:
+            _unlock(lock)
 
     # -- baseline --------------------------------------------------------------
     def write_baseline(self, files) -> None:

@@ -138,3 +138,41 @@ def test_session_start_excludes_scratch_locally(repo):
     (repo / ".scratch").mkdir()
     (repo / ".scratch" / "t.py").write_text("x\n")
     assert git(repo, "status", "--porcelain") == ""
+
+
+@pytest.mark.parametrize("args", [("commits", "nosuch..HEAD"), ("check", "--range", "nosuch..HEAD"),
+                                  ("push-check", "--range", "nosuch..HEAD")])
+def test_bad_range_is_an_error(repo, args):
+    out = run_cli(repo, *args)
+    assert out.returncode != 0 and "nosuch" in out.stderr
+
+
+def test_deny_output_survives_a_cp1252_pipe(repo):
+    import os
+    import sys
+    from helpers import CLI
+    (repo / "FIX_NOTES.md").write_text("x\n")
+    env = {**os.environ, "PYTHONIOENCODING": "cp1252"}
+    out = subprocess.run([sys.executable, str(CLI), "check"], cwd=repo, capture_output=True, env=env)
+    assert out.returncode == 1 and b"FIX_NOTES.md" in out.stdout and b"Traceback" not in out.stderr
+
+
+def test_archive_rejects_paths_outside_repo(repo, tmp_path_factory):
+    outside = tmp_path_factory.mktemp("o") / "a.txt"
+    outside.write_text("x")
+    out = run_cli(repo, "archive", str(outside))
+    assert out.returncode == 1 and not (outside.parent / "archive").exists()
+
+
+def test_init_hooks_from_python_m_work(repo):
+    import os
+    import sys
+    from helpers import CLI
+    env = {**os.environ, "PYTHONPATH": str(CLI.parents[1] / "src")}
+    subprocess.run([sys.executable, "-m", "no_git_slop", "init", "--hooks"], cwd=repo, env=env,
+                   check=True, capture_output=True)
+    (repo / "b.py").write_text("x = 1\n")
+    git(repo, "add", "b.py")
+    out = subprocess.run(["git", "commit", "-m", "did stuff"], cwd=repo, env=env,
+                         capture_output=True, text=True)
+    assert out.returncode != 0 and "ImportError" not in out.stderr and "commit-format" in out.stderr
