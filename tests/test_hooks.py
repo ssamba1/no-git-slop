@@ -119,9 +119,11 @@ def test_stop_only_flags_files_created_this_session(repo):
 def test_stop_does_not_loop(repo):
     hook("session-start", {"cwd": str(repo)}, repo)
     (repo / "SUMMARY.md").write_text("x\n")
-    result = hook("stop", {"cwd": str(repo), "stop_hook_active": True}, repo)
-    assert "decision" not in result
-    assert "SUMMARY.md" in result["systemMessage"]
+    first = hook("stop", {"cwd": str(repo)}, repo)
+    assert first["decision"] == "block"
+    again = hook("stop", {"cwd": str(repo), "stop_hook_active": True}, repo)
+    assert "decision" not in again
+    assert "SUMMARY.md" in again["systemMessage"]
 
 
 def test_hooks_fail_open_on_garbage(repo):

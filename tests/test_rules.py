@@ -1,6 +1,8 @@
 import pytest
 
-from no_git_slop.rules import Config, check_commit_message, judge_new_file
+from no_git_slop.commits import check_commit_message
+from no_git_slop.config import Config
+from no_git_slop.rules import judge_new_file
 
 
 @pytest.fixture
