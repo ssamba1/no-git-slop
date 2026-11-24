@@ -4,14 +4,14 @@
       {
         "matcher": "startup|resume|clear|compact",
         "hooks": [
-          {"type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/bin/no-git-slop\" hook session-start"}
+          {"type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/bin/run-hook\" hook session-start"}
         ]
       }
     ],
     "UserPromptSubmit": [
       {
         "hooks": [
-          {"type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/bin/no-git-slop\" hook prompt"}
+          {"type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/bin/run-hook\" hook prompt"}
         ]
       }
     ],
@@ -19,13 +19,13 @@
       {
         "matcher": "Write|Edit|MultiEdit|NotebookEdit",
         "hooks": [
-          {"type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/bin/no-git-slop\" hook write"}
+          {"type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/bin/run-hook\" hook write"}
         ]
       },
       {
         "matcher": "Bash",
         "hooks": [
-          {"type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/bin/no-git-slop\" hook bash"}
+          {"type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/bin/run-hook\" hook bash"}
         ]
       }
     ],
@@ -33,14 +33,14 @@
       {
         "matcher": "Write|Edit|MultiEdit|NotebookEdit|Bash",
         "hooks": [
-          {"type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/bin/no-git-slop\" hook post"}
+          {"type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/bin/run-hook\" hook post"}
         ]
       }
     ],
     "Stop": [
       {
         "hooks": [
-          {"type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/bin/no-git-slop\" hook stop"}
+          {"type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/bin/run-hook\" hook stop"}
         ]
       }
     ]

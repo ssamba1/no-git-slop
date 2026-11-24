@@ -1,1 +1,2 @@
-no-git-slop
+#!/bin/sh
+exec sh "${0%/*}/run-hook" "$@"

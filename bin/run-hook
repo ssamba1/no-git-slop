@@ -1,0 +1,20 @@
+#!/bin/sh
+# Run no-git-slop with the first real Python 3.9+. On Windows `python3` is often the slow Microsoft Store stub,
+# so try `python` first there. The chosen interpreter is cached so each hook starts Python once, not twice.
+case $0 in */*) here=${0%/*} ;; *) here=. ;; esac  # not $(dirname): each fork costs ~40 ms in Git Bash
+# Cache only in Claude Code's per-user plugin data dir; a shared /tmp would let another user pick the interpreter.
+cache="${CLAUDE_PLUGIN_DATA:+$CLAUDE_PLUGIN_DATA/python-path}"
+if [ -n "$cache" ] && [ -r "$cache" ]; then
+  IFS= read -r py < "$cache"
+  [ -n "$py" ] && [ -f "$py" ] && exec "$py" -I -S "$here/no-git-slop" "$@"
+fi
+if [ "$OS" = "Windows_NT" ]; then order="python python3 py"; else order="python3 python"; fi
+for cand in $order; do
+  py=$("$cand" -c 'import sys; sys.exit(sys.version_info < (3, 9)) if sys.version_info < (3, 9) else print(sys.executable)' 2>/dev/null)
+  if [ -n "$py" ]; then
+    [ -n "$cache" ] && printf '%s\n' "$py" > "$cache" 2>/dev/null
+    exec "$py" -I -S "$here/no-git-slop" "$@"
+  fi
+done
+echo "no-git-slop: no Python 3.9+ found (tried $order); hooks are off." >&2
+exit 0

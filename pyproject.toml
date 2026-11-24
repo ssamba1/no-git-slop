@@ -13,6 +13,7 @@ dependencies = []
 
 [project.scripts]
 no-git-slop = "no_git_slop.cli:main"
+ngs = "no_git_slop.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

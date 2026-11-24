@@ -50,14 +50,14 @@ If a framework's folder exists, its plan files are allowed where it expects them
 
 ## Install
 
-**Claude Code plugin** (needs `python3`, 3.9 or newer):
+**Claude Code plugin** (needs Python 3.9 or newer as `python3`, `python` or `py`; works on Windows through Git Bash):
 
 ```
 /plugin marketplace add OWNER/no-git-slop
 /plugin install no-git-slop@no-git-slop
 ```
 
-The scratch folder is git-ignored automatically through `.git/info/exclude`, so your `.gitignore` isn't touched.
+The scratch folder is git-ignored automatically through `.git/info/exclude`, so your `.gitignore` isn't touched. `no-git-slop init` also adds it to `.gitignore` if you want it ignored for everyone who clones the repo.
 
 **Command line, git hooks and CI:**
 
