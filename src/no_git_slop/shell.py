@@ -19,8 +19,9 @@ MAX_DEPTH = 5
 _SEPARATORS = {";", "&&", "||", "|", "&", "\n", "(", ")", "|&", ";;"}
 _OUT_REDIRECTS = {">", ">>", ">|", "&>", "&>>", ">&"}
 _IN_REDIRECTS = {"<", "<<<", "<>"}
-_HEREDOC_RE = re.compile(r"<<(-?)\s*(['\"]?)([A-Za-z_][\w.-]*)\2")
+_HEREDOC_RE = re.compile(r"(?<!<)<<(?!<)(-?)\s*(['\"]?)([A-Za-z_][\w.-]*)\2")
 _ASSIGN_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+_KEYWORDS = {"if", "then", "else", "elif", "do", "while", "until", "!", "{"}
 _WRAPPERS = {"sudo", "nohup", "time", "command", "exec", "builtin", "nice", "ionice",
              "timeout", "stdbuf", "chronic", "unbuffer", "caffeinate", "doas"}
 _SHELLS = {"bash", "sh", "zsh", "dash", "ksh", "fish"}
@@ -37,7 +38,8 @@ class Command:
 
     @property
     def name(self) -> str:
-        return os.path.basename(self.argv[0]) if self.argv else ""
+        base = os.path.basename(self.argv[0]) if self.argv else ""
+        return base[:-4] if base.lower().endswith(".exe") else base
 
 
 @dataclass
@@ -101,6 +103,20 @@ def _strip_heredocs(command: str) -> Tuple[str, List[str]]:
     return "\n".join(out), bodies
 
 
+def _strip_comments(text: str) -> str:
+    """Drop unquoted `# ...` comments; shlex would choke on an apostrophe inside one."""
+    quoted = _quoted_offsets(text)
+    out, i = [], 0
+    while i < len(text):
+        if text[i] == "#" and not quoted[i] and (i == 0 or text[i - 1] in " \t\n;&|()"):
+            while i < len(text) and text[i] != "\n":
+                i += 1
+            continue
+        out.append(text[i])
+        i += 1
+    return "".join(out)
+
+
 def _tokens(command: str) -> Optional[List[str]]:
     try:
         lex = shlex.shlex(command, posix=True, punctuation_chars=";&|<>()\n")
@@ -113,8 +129,14 @@ def _tokens(command: str) -> Optional[List[str]]:
 
 
 def _resolve(cwd: Path, raw: str) -> Optional[Path]:
-    if not raw or _DYNAMIC.search(raw):
+    if not raw or _DYNAMIC.search(raw) or raw.startswith("/dev/"):
         return None
+    if raw.startswith("/") and not Path(raw).is_absolute():
+        # Windows: Bash paths are POSIX. Map Git Bash /c/... to C:/...; other rooted paths (/tmp) are outside any repo.
+        m = re.match(r"/([a-zA-Z])(/.*)?$", raw)
+        if not m:
+            return None
+        raw = m.group(1).upper() + ":" + (m.group(2) or "/")
     p = Path(os.path.expanduser(raw))
     if not p.is_absolute():
         p = cwd / p
@@ -126,17 +148,21 @@ def parse(command: str, cwd: Path, depth: int = 0) -> List[Command]:
     if depth > MAX_DEPTH or not command:
         return []
     text, bodies = _strip_heredocs(command)
-    tokens = _tokens(text)
+    tokens = _tokens(_strip_comments(text))
     if tokens is None:
         return []
     commands: List[Command] = []
     seg: List[str] = []
     cur_cwd = cwd
+    exported: Dict[str, str] = {}
 
     def flush():
         nonlocal seg, cur_cwd
         if seg:
             for cmd in _build(seg, cur_cwd, bodies, depth):
+                if cmd.name == "export":
+                    exported.update(a.split("=", 1) for a in cmd.argv[1:] if _ASSIGN_RE.match(a))  # type: ignore[misc]
+                cmd.env = {**exported, **cmd.env}
                 if cmd.name in ("cd", "pushd") and len(cmd.argv) >= 2:
                     target = _resolve(cur_cwd, cmd.argv[-1])
                     if target is not None:
@@ -201,9 +227,12 @@ def _unwrap(cmd: Command, depth: int) -> List[Command]:
     cwd = cmd.cwd
     env = dict(cmd.env)
     guard = 0
-    while argv and guard < 10:
+    while argv and guard < 20:
         guard += 1
         name = os.path.basename(argv[0])
+        if name in _KEYWORDS:
+            argv = argv[1:]
+            continue
         if name == "env":
             j = 1
             while j < len(argv):
@@ -235,8 +264,13 @@ def _unwrap(cmd: Command, depth: int) -> List[Command]:
             j = 1
             while j < len(argv) and argv[j].startswith("-"):
                 # Options that take a value.
-                j += 2 if argv[j] in ("-u", "-g", "-n", "-c", "-s", "-k", "-o", "-e", "-i", "-p") \
-                    and name in ("sudo", "nice", "ionice", "stdbuf", "doas") else 1
+                if name == "timeout":
+                    takes = ("-s", "-k")
+                elif name in ("sudo", "nice", "ionice", "stdbuf", "doas"):
+                    takes = ("-u", "-g", "-n", "-c", "-s", "-k", "-o", "-e", "-i", "-p")
+                else:
+                    takes = ()
+                j += 2 if argv[j] in takes else 1
             if name == "timeout" and j < len(argv):
                 j += 1  # duration
             argv = argv[j:]
@@ -528,14 +562,33 @@ def commit_message(args: List[str], cwd: Path) -> Optional[str]:
     return "\n\n".join(resolved)
 
 
-def short_flags(args: List[str]) -> set:
-    """Single-letter flags from combined short options: -am -> {a, m}."""
-    flags = set()
-    for a in args:
-        if a.startswith("-") and not a.startswith("--") and len(a) > 1:
-            for ch in a[1:]:
-                if ch == "m" or ch == "F":  # value follows; remaining chars are the value
-                    flags.add(ch)
-                    break
+# git options that take a separate value, so the next argument is neither a flag nor a path.
+_GIT_VALUE_OPTS = {"--author", "--date", "--message", "--file", "--template", "--cleanup", "--trailer",
+                   "--fixup", "--squash", "--reuse-message", "--reedit-message", "--push-option",
+                   "--repo", "--receive-pack", "--exec", "--chmod", "--pathspec-from-file"}
+
+
+def split_args(args: List[str], short_values: str = "mFCct") -> Tuple[set, List[str]]:
+    """Short flags (-am -> {a, m}) and positional args, skipping option values like `-m "- x"`."""
+    flags, plain, skip = set(), [], False
+    for k, a in enumerate(args):
+        if skip:
+            skip = False
+        elif a == "--":
+            plain += args[k + 1:]
+            break
+        elif a.startswith("--"):
+            skip = "=" not in a and a in _GIT_VALUE_OPTS
+        elif a.startswith("-") and len(a) > 1:
+            for idx, ch in enumerate(a[1:]):
                 flags.add(ch)
-    return flags
+                if ch in short_values:
+                    skip = idx == len(a) - 2  # the value is the next argument
+                    break
+        else:
+            plain.append(a)
+    return flags, plain
+
+
+def short_flags(args: List[str], short_values: str = "mFCct") -> set:
+    return split_args(args, short_values)[0]

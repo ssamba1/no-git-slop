@@ -65,6 +65,7 @@ def test_malformed_events_fail_open(tmp_path, payload):
         assert proc.returncode == 0
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows has no POSIX permission bits")
 def test_state_files_are_private(tmp_path):
     repo = make_repo(tmp_path)
     hook("session-start", {"cwd": str(repo), "session_id": "p"}, repo)

@@ -116,13 +116,43 @@ def test_user_named_guard_config_is_allowed(repo):
     ("pre-commit uninstall", "deny"),
     ("git push --no-verify", "deny"),
     ("echo '{}' > .no-git-slop.json", "ask"),
+    ("export HUSKY=0 && git commit -m 'fix(parser): handle empty input'", "deny"),
+    ("GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/x git commit -m 'feat: x y'", "deny"),
+    ("git config set core.hooksPath /dev/null", "deny"),
+    ("if true; then git commit --no-verify -m 'feat: add x'; fi", "deny"),
 ])
 def test_hook_bypasses_are_blocked(repo, command, expected):
     assert decision(hook("bash", bash_event(repo, command), repo)) == expected
 
 
-def test_reading_hooks_path_is_fine(repo):
-    assert hook("bash", bash_event(repo, "git config --get core.hooksPath"), repo) is None
+@pytest.mark.parametrize("command", [
+    "git config --get core.hooksPath",
+    "git config core.hooksPath",
+    "git config --show-origin core.hooksPath",
+    "git config get core.hooksPath",
+    "SKIP=check-settings git commit -m 'fix(parser): handle empty input'",
+    "git commit -m 'fix(parser): handle empty input' -m '- add a guard, tests and docs'",
+])
+def test_legit_commands_pass(repo, command):
+    assert hook("bash", bash_event(repo, command), repo) is None
+
+
+@pytest.mark.parametrize("command, expected", [
+    ("if true; then git add -A; fi", "deny"),
+    ("{ git add -A; }", "deny"),
+    ("! git add -A", "deny"),
+    ("for f in a; do git add .; done", "deny"),
+    ("cat <<< hello\ngit add -A", "deny"),
+    ("git add -A\n# it's done", "deny"),
+    ("git add -A  # stage it, it's fine", "deny"),
+    ("git add -Av", "deny"),
+    ("git.exe add -A", "deny"),
+    ("timeout -s KILL 10 git add -A", "deny"),
+    ("git commit -m 'fix(parser): handle empty input' .", "deny"),
+    ("git push -fu origin feat", "ask"),
+])
+def test_parser_sees_through_shell_syntax(repo, command, expected):
+    assert decision(hook("bash", bash_event(repo, command), repo)) == expected
 
 
 # ---------------------------------------------------------- Bash writes
@@ -336,7 +366,10 @@ def test_plans_ignore_blocks_staging_plan_files(repo):
 def test_harness_artifacts_are_not_blamed(repo):
     start(repo)
     (repo / "tmpclaude-1a2b-cwd").write_text("")
-    os.symlink("/dev/null", repo / "stub")
+    try:
+        os.symlink("/dev/null", repo / "stub")
+    except OSError:
+        pytest.skip("symlinks need Developer Mode or admin on Windows")
     (repo / "debug_x.py").write_text("print(1)\n")
     result = hook("stop", {"cwd": str(repo), "session_id": "s1"}, repo)
     assert result["decision"] == "block"
@@ -403,3 +436,44 @@ def test_profiles_and_rule_overrides(repo):
 def test_broken_config_falls_back_to_defaults(repo):
     (repo / ".no-git-slop.json").write_text("{ not json")
     assert decision(hook("write", write_event(repo, "SUMMARY.md"), repo)) == "deny"
+
+
+# ------------------------------------------------------------ audit fixes
+
+def test_vscode_settings_mention_does_not_unlock_claude_settings(repo):
+    prompt(repo, "turn on format-on-save in my vscode settings.json")
+    event = write_event(repo, ".claude/settings.json", tool="Edit")
+    assert decision(hook("write", event, repo)) == "ask"
+
+
+def test_worktree_state_is_guarded(repo, tmp_path_factory):
+    wt = tmp_path_factory.mktemp("w") / "wt"
+    git(repo, "worktree", "add", "-q", str(wt))
+    start(wt)
+    gd = git(wt, "rev-parse", "--absolute-git-dir").strip()
+    target = f"{gd}/no-git-slop/session-s1.json"
+    event = {"cwd": str(wt), "session_id": "s1", "tool_name": "Write",
+             "tool_input": {"file_path": target, "content": "{}"}}
+    assert decision(hook("write", event, wt)) == "deny"
+    assert decision(hook("bash", bash_event(wt, f"echo '{{}}' > '{target}'"), wt)) == "deny"
+
+
+def test_non_ascii_repo_path(tmp_path):
+    repo = tmp_path / "naïve-été"
+    repo.mkdir()
+    make_repo(repo)
+    assert decision(hook("write", write_event(repo, "IMPLEMENTATION_SUMMARY.md"), repo)) == "deny"
+
+
+def test_parallel_hooks_all_decide(repo):
+    import subprocess
+    import sys
+    from helpers import CLI
+    procs = [subprocess.Popen([sys.executable, str(CLI), "hook", "write"], stdin=subprocess.PIPE,
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=repo)
+             for _ in range(12)]
+    for i, p in enumerate(procs):
+        p.stdin.write(json.dumps(write_event(repo, f"NOTES_{i}.md")).encode())
+        p.stdin.close()
+    outs = [p.communicate()[0] for p in procs]
+    assert all(b'"deny"' in o for o in outs), outs

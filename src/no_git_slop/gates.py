@@ -11,7 +11,7 @@ import shlex
 from pathlib import Path
 from typing import List, Optional
 
-from . import gitutil, shell
+from . import gitutil, shell, state
 from .commits import check_commit_message, check_pr
 from .config import Config
 from .findings import Finding
@@ -34,6 +34,20 @@ def rel_to(root: Path, path: Path) -> Optional[str]:
             return Path(os.path.normpath(path)).relative_to(root).as_posix()
         except ValueError:
             return None
+
+
+def state_path_finding(root: Path, config: Config, path: Path) -> List[Finding]:
+    """Guard state that lives outside the work tree, e.g. .git/worktrees/<name>/no-git-slop."""
+    gd = gitutil.git_dir(root)
+    if gd is None:
+        return []
+    p = Path(os.path.realpath(path))
+    for guarded in (gd / state.STATE_DIRNAME, gd / "info" / "exclude"):
+        g = Path(os.path.realpath(guarded))
+        if p == g or g in p.parents:
+            return _finding(config, "guard-state", f"`{path}` belongs to no-git-slop's own state. "
+                            "Leave it alone.", p.as_posix())
+    return []
 
 
 def _mode(config: Config, rule: str) -> str:
@@ -93,7 +107,10 @@ def evaluate_bash(root: Path, config: Config, session, command: str, cwd: Path,
         pr = shell.gh_pr_call(cmd)
         if pr and not off:
             findings += pr_checks(root, config, pr.title, pr.body, pr.base, pr.head)
-    return findings
+    unique = {}
+    for f in findings:  # `export HUSKY=0 && git commit` reports the same thing twice otherwise
+        unique.setdefault((f.rule, f.reason, f.path), f)
+    return list(unique.values())
 
 
 def _bypass_checks(cmd: shell.Command, config: Config) -> List[Finding]:
@@ -103,8 +120,13 @@ def _bypass_checks(cmd: shell.Command, config: Config) -> List[Finding]:
         if key in env and (bad is None or env[key] == bad):
             out += _finding(config, "hooks-bypass", f"`{key}={env[key]}` disables git hooks. Fix "
                             "what the hooks report instead.")
+    for k, v in env.items():
+        if k.startswith("GIT_CONFIG_KEY_") and v.lower() == "core.hookspath":
+            out += _finding(config, "hooks-bypass", "Setting core.hooksPath through GIT_CONFIG_* swaps "
+                            "out the repo's git hooks.")
     skip = env.get("SKIP", "")
-    if any(s in skip for s in ("no-git-slop", "ngs", "commitlint", "gitleaks")):
+    skipped = {s.strip() for s in skip.split(",")}  # pre-commit's SKIP is a comma-separated list of hook ids
+    if any(s.startswith("no-git-slop") or s in ("ngs", "commitlint", "gitleaks") for s in skipped):
         out += _finding(config, "hooks-bypass", f"`SKIP={skip}` skips the repo's checks.")
     if cmd.name in ("pre-commit", "lefthook", "husky") and cmd.argv[1:2] == ["uninstall"]:
         out += _finding(config, "hooks-bypass", f"`{cmd.name} uninstall` removes the repo's git "
@@ -115,7 +137,9 @@ def _bypass_checks(cmd: shell.Command, config: Config) -> List[Finding]:
 def _target_checks(root: Path, config: Config, session, t: shell.WriteTarget, off: bool,
                    subagent: bool) -> List[Finding]:
     rel = rel_to(root, t.path)
-    if rel is None or rel == "":
+    if rel is None:
+        return state_path_finding(root, config, t.path)
+    if rel == "":
         return []
     if t.kind in ("delete", "chmod"):
         if rel.startswith(".git/hooks/") or rel == ".git/hooks":
@@ -157,7 +181,7 @@ def _staging_suggestion(root: Path, session) -> str:
         return "Run `git status` and stage the files you changed by path."
     shown = " ".join(shlex.quote(p) for p in paths[:15])
     more = f" (+{len(paths) - 15} more)" if len(paths) > 15 else ""
-    return f"Files changed this session: `git add {shown}`{more}"
+    return f"Stage your changed files by path: `git add {shown}`{more}"
 
 
 def _git_checks(root: Path, config: Config, session, call: shell.GitCall, off: bool) -> List[Finding]:
@@ -168,8 +192,7 @@ def _git_checks(root: Path, config: Config, session, call: shell.GitCall, off: b
     if "core.hookspath" in call.configs:
         out += _finding(config, "hooks-bypass", "`git -c core.hooksPath=...` swaps out the repo's "
                         "git hooks. Fix what they report instead.")
-    if sub == "config" and any(a.lower() == "core.hookspath" for a in args) and \
-            not any(a in ("--get", "--unset", "--list", "-l", "--get-all", "--unset-all") for a in args):
+    if sub == "config" and _config_sets_hooks_path(args):
         out += _finding(config, "hooks-bypass", "Changing core.hooksPath disables the repo's git "
                         "hooks. Ask the user first.")
     if sub in ("commit", "push", "merge", "am", "rebase", "cherry-pick") and \
@@ -188,6 +211,18 @@ def _git_checks(root: Path, config: Config, session, call: shell.GitCall, off: b
     return out
 
 
+def _config_sets_hooks_path(args: List[str]) -> bool:
+    """`git config core.hooksPath x` or `git config set ...` changes it; reads and unsets don't."""
+    keys = [i for i, a in enumerate(args) if a.lower() == "core.hookspath"]
+    if not keys:
+        return False
+    if any(a in ("--unset", "--unset-all", "unset", "--get", "--get-all", "--get-regexp", "get",
+                 "--list", "-l", "list") for a in args[:keys[0]]):
+        return False
+    after = [a for a in args[keys[0] + 1:] if not a.startswith("-")]
+    return bool(after) or any(a in ("set", "--add", "--replace-all") for a in args[:keys[0]])
+
+
 def _add_checks(root: Path, config: Config, session, call: shell.GitCall) -> List[Finding]:
     args = call.args
     if any(a == "--pathspec-from-file" or a.startswith("--pathspec-from-file=") for a in args):
@@ -199,7 +234,7 @@ def _add_checks(root: Path, config: Config, session, call: shell.GitCall) -> Lis
         p = shell._resolve(call.cwd, a)
         if p is not None and rel_to(root, p) == "" and a not in bulk:
             bulk.append(a)
-    if any(a in ("-A", "--all", "--no-ignore-removal") for a in args):
+    if any(a in ("--all", "--no-ignore-removal") for a in args) or "A" in shell.short_flags(args, ""):
         bulk.append("-A")
     if bulk and config.mode("bulk-add") != "off":
         return _finding(config, "bulk-add", f"`git add {bulk[0]}` sweeps in every stray file "
@@ -237,7 +272,12 @@ def _clutter(root: Path, config: Config, session, paths, verb: str) -> List[Find
 def _commit_checks(root: Path, config: Config, session, call: shell.GitCall, flags) -> List[Finding]:
     args = call.args
     out: List[Finding] = []
-    if "--all" in args or "a" in flags:
+    # `git commit .` commits every modified tracked file, like -a; `git commit src/x.py` is fine.
+    whole_repo = False
+    for p in shell.split_args(args)[1]:
+        resolved = shell._resolve(call.cwd, p)
+        whole_repo |= p in _BULK_SPECS or (resolved is not None and rel_to(root, resolved) == "")
+    if "--all" in args or "a" in flags or whole_repo:
         out += _finding(config, "commit-all", "`git commit -a` sweeps in every modified file. "
                         "Stage the intended files by path, then commit.")
     if "--signoff" in args or "s" in flags:
@@ -262,9 +302,9 @@ def _commit_checks(root: Path, config: Config, session, call: shell.GitCall, fla
 def _push_checks(root: Path, config: Config, call: shell.GitCall) -> List[Finding]:
     args = call.args
     out: List[Finding] = []
-    plain = [a for a in args if not a.startswith("-")]
-    if any(a in ("-f", "--force") or a.startswith(("--force-with-lease", "--force-if-includes"))
-           for a in args) or any(a.startswith("+") for a in plain[1:]):
+    flags, plain = shell.split_args(args, "o")
+    if "f" in flags or any(a == "--force" or a.startswith(("--force-with-lease", "--force-if-includes"))
+                           for a in args) or any(a.startswith("+") for a in plain[1:]):
         out += _finding(config, "push-force", "Force-pushing rewrites shared history. Confirm "
                         "with the user first.")
     default = gitutil.default_branch(root)

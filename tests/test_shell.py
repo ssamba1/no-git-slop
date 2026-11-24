@@ -11,7 +11,7 @@ def targets(command):
     out = []
     for cmd in shell.parse(command, CWD):
         for t in shell.write_targets(cmd):
-            out.append((str(t.path.relative_to(CWD)) if str(t.path).startswith(str(CWD)) else str(t.path),
+            out.append((t.path.relative_to(CWD).as_posix() if str(t.path).startswith(str(CWD)) else t.path.as_posix(),
                         t.kind))
     return out
 
