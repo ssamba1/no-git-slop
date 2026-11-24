@@ -1,4 +1,5 @@
-# Copy to .github/workflows/no-git-slop.yml. Catches anything that skipped local hooks.
+# Copy to .github/workflows/no-git-slop.yml. Catches anything that skipped local hooks,
+# including commits from humans and other agents.
 name: no-git-slop
 
 on:
@@ -17,10 +18,21 @@ jobs:
           python-version: "3.12"
 
       - name: Install no-git-slop
-        run: pip install "git+https://github.com/OWNER/no-git-slop@v0.1.0"
+        run: pip install "git+https://github.com/OWNER/no-git-slop@v0.2.0"
 
       - name: New files in this PR
         run: no-git-slop check --range "origin/${{ github.base_ref }}...HEAD"
 
       - name: Commit messages in this PR
         run: no-git-slop commits "origin/${{ github.base_ref }}..HEAD"
+
+      - name: PR description
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          printf '%s' "$PR_BODY" > "$RUNNER_TEMP/pr-body.md"
+          no-git-slop pr --title "$PR_TITLE" --body-file "$RUNNER_TEMP/pr-body.md" --base "${{ github.base_ref }}"
+
+      # Optional: duplication, dead code and code-content slop, if you install the tools.
+      # - run: npm i -g jscpd && no-git-slop check --deep --strict

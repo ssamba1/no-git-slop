@@ -1,10 +1,12 @@
-# Install: pip install pre-commit && pre-commit install --hook-type pre-commit --hook-type commit-msg
+# Install: pip install pre-commit
+#          pre-commit install --hook-type pre-commit --hook-type commit-msg --hook-type pre-push
 repos:
   - repo: https://github.com/OWNER/no-git-slop
-    rev: v0.1.0
+    rev: v0.2.0
     hooks:
       - id: no-git-slop
       - id: no-git-slop-commit-msg
+      - id: no-git-slop-pre-push
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0

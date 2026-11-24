@@ -1,8 +1,24 @@
 {
+  "profile": "default",
+  "rules": {
+    "root-doc": "warn"
+  },
   "allow": ["docs/adr/*.md"],
   "deny": [],
   "scratchDir": ".scratch",
-  "blockBulkAdd": true,
+  "presets": "auto",
+  "plans": "commit",
   "commitStyle": "conventional",
-  "maxSubjectLength": 72
+  "maxSubjectLength": 72,
+  "attribution": "ignore",
+  "newFileBudget": 12,
+  "commitFileBudget": 30,
+  "commitLineBudget": 1000,
+  "diffBudget": 400,
+  "nearDuplicateThreshold": 0.85,
+  "verify": "",
+  "integrations": {
+    "aislop": "off"
+  },
+  "integrationsAtStop": false
 }

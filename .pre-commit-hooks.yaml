@@ -11,3 +11,11 @@
   entry: no-git-slop commit-msg
   language: python
   stages: [commit-msg]
+
+- id: no-git-slop-pre-push
+  name: no-git-slop (unpushed commits)
+  entry: no-git-slop push-check
+  language: python
+  pass_filenames: false
+  always_run: true
+  stages: [pre-push]
