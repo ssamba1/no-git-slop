@@ -8,9 +8,16 @@
         ]
       }
     ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {"type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/bin/no-git-slop\" hook prompt"}
+        ]
+      }
+    ],
     "PreToolUse": [
       {
-        "matcher": "Write",
+        "matcher": "Write|Edit|MultiEdit|NotebookEdit",
         "hooks": [
           {"type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/bin/no-git-slop\" hook write"}
         ]
@@ -19,6 +26,14 @@
         "matcher": "Bash",
         "hooks": [
           {"type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/bin/no-git-slop\" hook bash"}
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit|NotebookEdit|Bash",
+        "hooks": [
+          {"type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/bin/no-git-slop\" hook post"}
         ]
       }
     ],
