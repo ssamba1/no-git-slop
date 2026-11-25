@@ -1,5 +1,5 @@
 #!/bin/sh
-"exec" "sh" "${0%/*}/run-hook" "$@"  # sh: pick a real Python (not the Windows Store stub); Python: a no-op string
+"exec" "sh" "-c" 'd=${0%/*}; [ "$d" = "$0" ] && d=.; exec sh "$d/run-hook" "$@"' "$0" "$@"  # sh: pick a real Python (not the Windows Store stub); Python: a no-op string
 """Run no-git-slop from a checkout or plugin install, no pip install needed."""
 import os
 import sys

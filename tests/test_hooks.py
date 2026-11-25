@@ -1,6 +1,7 @@
 """Run the real CLI the way Claude Code does: JSON on stdin, JSON on stdout."""
 
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -150,3 +151,43 @@ def test_cli_commits_range(repo):
     out = subprocess.run([sys.executable, str(CLI), "commits", "HEAD~1..HEAD"],
                          capture_output=True, text=True, cwd=repo)
     assert out.returncode == 1 and "wip" in out.stdout
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Git Bash paths exist only on Windows")
+def test_git_bash_style_event_paths(repo):
+    bash_path = "/" + str(repo)[0].lower() + str(repo)[2:].replace("\\", "/")
+    event = {"cwd": bash_path, "tool_name": "Write",
+             "tool_input": {"file_path": bash_path + "/CHANGES_SUMMARY.md", "content": "x"}}
+    assert decision(hook("write", event, repo.parent)) == "deny"
+
+
+@pytest.mark.skipif(not shutil.which("sh"), reason="needs sh")
+@pytest.mark.parametrize("name", ["no-git-slop", "ngs"])
+def test_launcher_runs_from_its_own_folder(name):
+    out = subprocess.run(["sh", name, "--version"], cwd=CLI.parent, capture_output=True, text=True)
+    assert out.returncode == 0 and out.stdout.strip(), out.stderr
+
+
+def ps_event(repo, command):
+    return {"cwd": str(repo), "tool_name": "PowerShell", "tool_input": {"command": command}}
+
+
+@pytest.mark.parametrize("command,expected", [
+    ("git status; git add -A", "deny"),
+    ("if ($?) { git commit --no-verify -m 'feat: x' }", "deny"),
+    ("if (Test-Path x) { git status } else { git push -f origin main }", "ask"),
+    ("$env:HUSKY='0'; git commit -m 'feat: add parser'", "deny"),
+    ("Set-Content -Path IMPLEMENTATION_SUMMARY.md -Value 'x'", "deny"),
+    (r"'x' | Out-File .\notes_backup.md", "deny"),
+    ("Copy-Item app.py app_copy.py", "deny"),
+    (r"Remove-Item -Recurse -Force .git\hooks", "deny"),
+    ("git commit -m @'\nfeat: add parser\n\n- a body line\n'@", None),
+    ("git status; git diff --stat", None),
+    ("Get-ChildItem -Recurse | Select-Object -First 5", None),
+])
+def test_powershell_commands(repo, command, expected):
+    assert decision(hook("bash", ps_event(repo, command), repo)) == expected
+
+
+def test_bash_into_powershell(repo):
+    assert decision(hook("bash", bash_event(repo, "powershell -Command \"git add -A\""), repo)) == "deny"

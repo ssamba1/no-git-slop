@@ -40,9 +40,14 @@ def _emit(obj) -> None:
     sys.stdout.write(json.dumps(obj))
 
 
+def _path(raw: Optional[str]) -> Path:
+    """An event path as a local Path; maps Git Bash /c/... to C:/... on Windows."""
+    return (shell._resolve(Path("."), raw) or Path(raw)) if raw else Path(".")
+
+
 def _root_for(event: dict, start: Optional[Path] = None) -> Optional[Path]:
     candidates = [start] if start else []
-    candidates += [Path(event.get("cwd") or "."), Path(os.environ.get("CLAUDE_PROJECT_DIR", "."))]
+    candidates += [_path(event.get("cwd")), _path(os.environ.get("CLAUDE_PROJECT_DIR"))]
     for c in candidates:
         if c and c.exists():
             root = gitutil.repo_root(c)
@@ -114,9 +119,9 @@ def on_write(event: dict) -> None:
     file_path = tool_input.get("file_path") or tool_input.get("notebook_path")
     if not file_path:
         return
-    target = Path(file_path)
+    target = _path(file_path)
     if not target.is_absolute():
-        target = Path(event.get("cwd") or ".") / target
+        target = _path(event.get("cwd")) / target
     parent = target.parent
     while not parent.exists() and parent != parent.parent:
         parent = parent.parent
@@ -139,18 +144,24 @@ def on_write(event: dict) -> None:
 
 # ----------------------------------------------------------------- Bash
 
-def on_bash(event: dict) -> None:
+def _command(event: dict) -> str:
+    """The shell command of a Bash or PowerShell call, in the POSIX shape the parser reads."""
     command = (event.get("tool_input") or {}).get("command") or ""
+    return shell.from_powershell(command) if event.get("tool_name") == "PowerShell" else command
+
+
+def on_bash(event: dict) -> None:
+    command = _command(event)
     if not command.strip():
         return
-    cwd = Path(event.get("cwd") or os.environ.get("CLAUDE_PROJECT_DIR") or ".")
+    cwd = _path(event.get("cwd") or os.environ.get("CLAUDE_PROJECT_DIR"))
     root = _root_for(event)
     if not root:
         return
     session = state.Session(root, state.session_key(event))
     config = load_config(root)
     findings = evaluate_bash(root, config, session, command, cwd, _subagent(event))
-    _decide_pre_tool(root, session, findings, "pre-Bash")
+    _decide_pre_tool(root, session, findings, f"pre-{event.get('tool_name') or 'Bash'}")
 
 
 # ------------------------------------------------------------ PostToolUse
@@ -167,9 +178,9 @@ def on_post(event: dict) -> None:
     if tool in ("Write", "Edit", "MultiEdit", "NotebookEdit"):
         fp = tool_input.get("file_path") or tool_input.get("notebook_path")
         if fp:
-            paths.append(Path(fp))
-    command = (tool_input.get("command") or "") if tool == "Bash" else ""
-    cwd = Path(event.get("cwd") or ".")
+            paths.append(_path(fp))
+    command = _command(event) if tool in ("Bash", "PowerShell") else ""
+    cwd = _path(event.get("cwd"))
     if command:
         for cmd in shell.parse(command, cwd):
             paths += [t.path for t in shell.write_targets(cmd) if t.kind not in ("delete", "chmod")]

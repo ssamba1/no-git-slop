@@ -1,2 +1,3 @@
 #!/bin/sh
-exec sh "${0%/*}/run-hook" "$@"
+case $0 in */*) here=${0%/*} ;; *) here=. ;; esac
+exec sh "$here/run-hook" "$@"

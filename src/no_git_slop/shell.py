@@ -143,6 +143,33 @@ def _resolve(cwd: Path, raw: str) -> Optional[Path]:
     return Path(os.path.normpath(str(p)))
 
 
+_PS_HERE = re.compile(r"""@(['"])[ \t]*\r?\n(.*?)\r?\n\1@""", re.S)
+_PS_ENV = re.compile(r"\$env:(\w+)\s*=\s*", re.I)
+
+
+def from_powershell(text: str) -> str:
+    """Rewrite a PowerShell command line into the POSIX shape parse() reads.
+
+    shortcut: covers blocks, here-strings, $env: assignments and backslash paths, not .NET calls
+    like [IO.File]::WriteAllText; extend if agents start using those.
+    """
+    text = _PS_HERE.sub(lambda m: shlex.quote(m.group(2)), text)
+    text = text.replace("`\r\n", " ").replace("`\n", " ")
+    text = _PS_ENV.sub(r"export \1=", text)
+    out, quote = [], None
+    for ch in text:
+        if ch == "\\":
+            ch = "/"  # a path separator in PowerShell, never an escape
+        elif quote:
+            quote = None if ch == quote else quote
+        elif ch in "'\"":
+            quote = ch
+        elif ch in "{}":
+            ch = ";"
+        out.append(ch)
+    return "".join(out)
+
+
 def parse(command: str, cwd: Path, depth: int = 0) -> List[Command]:
     """Split a command line into simple commands, unwrapping env/sudo/bash -c etc."""
     if depth > MAX_DEPTH or not command:
@@ -284,6 +311,13 @@ def _unwrap(cmd: Command, depth: int) -> List[Command]:
                             c.env = {**env, **c.env}
                         return inner
             return [Command(argv, cwd, env, cmd.out_redirects, cmd.stdin_body)]
+        if name.lower() in ("powershell", "powershell.exe", "pwsh", "pwsh.exe"):
+            for j, a in enumerate(argv[1:], start=1):
+                if a.lower() in ("-c", "-command") and j + 1 < len(argv):
+                    inner = parse(from_powershell(" ".join(argv[j + 1:])), cwd, depth + 1)
+                    for c in inner:
+                        c.env = {**env, **c.env}
+                    return inner
         break
     if not argv and not cmd.out_redirects:
         return []
@@ -330,6 +364,48 @@ def _read_small(path: Path) -> Optional[str]:
     return None
 
 
+_PS_CMDLETS = {**dict.fromkeys(("set-content", "sc", "add-content", "ac", "out-file", "tee-object"), "write"),
+               **dict.fromkeys(("new-item", "ni"), "new"),
+               **dict.fromkeys(("copy-item", "cpi", "copy"), "cp"),
+               **dict.fromkeys(("move-item", "mi", "move"), "mv"),
+               **dict.fromkeys(("remove-item", "ri", "del", "erase", "rd", "rmdir"), "delete")}
+_PS_SWITCHES = {"-force", "-append", "-nonewline", "-noclobber", "-passthru", "-whatif", "-confirm",
+                "-recurse", "-container"}
+
+
+def _ps_write_targets(cmd: Command, kind: str) -> List[WriteTarget]:
+    named: Dict[str, str] = {}
+    pos: List[str] = []
+    args = cmd.argv[1:]
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a.startswith("-") and len(a) > 1:
+            k = a.lower().rstrip(":")
+            if k in _PS_SWITCHES or i + 1 >= len(args):
+                named[k] = ""
+                i += 1
+            else:
+                named[k] = args[i + 1]
+                i += 2
+        else:
+            pos.append(a)
+            i += 1
+    paths = [named[k] for k in ("-path", "-literalpath", "-filepath") if named.get(k)] or pos[:1]
+    if kind in ("cp", "mv"):
+        dest = named.get("-destination") or (pos[1] if len(pos) > 1 else None)
+        if not paths or not dest:
+            return []
+        return write_targets(Command([kind, paths[0], dest], cmd.cwd, cmd.env))
+    targets = [p for p in (_resolve(cmd.cwd, a) for a in paths) if p]
+    if kind == "delete":
+        return [WriteTarget(p, "delete") for p in targets]
+    if kind == "new" and named.get("-itemtype", "").lower() == "directory":
+        return [WriteTarget(p, "mkdir") for p in targets]
+    value = named.get("-value") or (pos[1] if kind == "write" and len(pos) > 1 else None)
+    return [WriteTarget(p, "redirect", value) for p in targets]
+
+
 def write_targets(cmd: Command) -> List[WriteTarget]:
     out: List[WriteTarget] = []
     for raw, body in cmd.out_redirects:
@@ -339,6 +415,8 @@ def write_targets(cmd: Command) -> List[WriteTarget]:
     name, args = cmd.name, cmd.argv[1:]
     if not name:
         return out
+    if name.lower() in _PS_CMDLETS:
+        return out + _ps_write_targets(cmd, _PS_CMDLETS[name.lower()])
     if name == "tee":
         plain, _ = _plain_args(args)
         out += [WriteTarget(p, "tee", cmd.stdin_body) for p in map(lambda a: _resolve(cmd.cwd, a), plain) if p]
