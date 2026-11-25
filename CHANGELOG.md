@@ -18,6 +18,8 @@ All notable changes to this project are documented here. The format follows [Kee
 - CLI: `bin/no-git-slop` and `bin/ngs` start on Windows (they used `python3`); output with a ✗ mark no longer crashes on a cp1252 pipe; a bad revision range is an error instead of a silent pass; `init --hooks` works from a pip install or `python -m`; `archive` refuses paths outside the repo; pip installs get the `ngs` alias.
 - Line endings are pinned to LF so the shell launchers survive a Windows checkout.
 - Commands run through Claude Code's PowerShell tool are now checked like Bash commands; before, `git add -A` or `--no-verify` in PowerShell skipped no-git-slop entirely. `powershell -Command "..."` inside Bash is unwrapped too.
+- PowerShell .NET file calls (`[IO.File]::WriteAllText`, `AppendAllLines`, `Copy`, `Move`, `Delete`, `[IO.Directory]::CreateDirectory`, `New-Object IO.StreamWriter`) are checked like the matching cmdlets; before, they wrote report and backup files unchecked.
+- `no-git-slop init --hooks` prints an error instead of crashing when git cannot report the repo's `.git` folder.
 - Hook events with Git Bash paths (`/d/repo`) resolve to the right repo, and `sh no-git-slop` / `sh ngs` work when run from inside `bin/`.
 
 ## [0.2.0] - 2026-11-24

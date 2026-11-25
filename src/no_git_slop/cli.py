@@ -281,7 +281,10 @@ def cmd_init(args) -> int:
                   "`no-git-slop commit-msg` and `no-git-slop push-check` to that setup instead.")
             return 0
         gd = gitutil.git_dir(root)
-        py = Path(sys.executable).as_posix()
+        if gd is None:
+            print("Could not find this repo's .git folder, so no hooks were installed.")
+            return 1
+        py =Path(sys.executable).as_posix()
         script = Path(sys.argv[0])
         # A real launcher script (bin/no-git-slop, a POSIX pip wrapper) runs as a file; otherwise
         # (a Windows .exe wrapper, `python -m no_git_slop`) run the installed package.

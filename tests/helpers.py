@@ -2,6 +2,7 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 CLI = Path(__file__).resolve().parents[1] / "bin" / "no-git-slop"
 
@@ -26,7 +27,7 @@ def run_cli(root, *args, stdin=None):
                           text=True, cwd=root)
 
 
-def hook(name, event, cwd):
+def hook(name, event, cwd) -> Any:
     out = subprocess.run([sys.executable, str(CLI), "hook", name], input=json.dumps(event),
                          capture_output=True, text=True, cwd=cwd)
     assert out.returncode == 0, out.stderr

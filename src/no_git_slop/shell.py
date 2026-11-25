@@ -145,14 +145,58 @@ def _resolve(cwd: Path, raw: str) -> Optional[Path]:
 
 _PS_HERE = re.compile(r"""@(['"])[ \t]*\r?\n(.*?)\r?\n\1@""", re.S)
 _PS_ENV = re.compile(r"\$env:(\w+)\s*=\s*", re.I)
+_PS_STR = r"""'(?:[^']|'')*'|"(?:[^"`]|`.)*\""""
+_PS_DOTNET = re.compile(
+    r"\[(?:System\.)?IO\.(File|Directory)\]::(\w+)\(\s*((?:" + _PS_STR + r"|[^()'\"]|\([^()]*\))*)\)"
+    r"|New-Object\s+(?:-TypeName\s+)?(?:System\.)?IO\.(?:StreamWriter|FileStream)\s*(?:-ArgumentList\s*)?"
+    r"\(?\s*(" + _PS_STR + r")", re.I)
+_PS_FILE_WRITES = {"writealltext", "writealllines", "writeallbytes", "appendalltext", "appendalllines",
+                   "create", "createtext", "appendtext", "openwrite"}
+_PS_DOTNET_CMDLET = {("file", "copy"): "Copy-Item", ("file", "move"): "Move-Item",
+                     ("directory", "move"): "Move-Item", ("file", "delete"): "Remove-Item",
+                     ("directory", "delete"): "Remove-Item", ("directory", "createdirectory"): "New-Item"}
+
+
+def _ps_literal(arg: str) -> Optional[str]:
+    """A PowerShell string literal's value, or None when the argument is dynamic."""
+    arg = arg.strip()
+    if len(arg) >= 2 and arg[0] == arg[-1] == "'":
+        return arg[1:-1].replace("''", "'")
+    if len(arg) >= 2 and arg[0] == arg[-1] == '"' and "$" not in arg:
+        return re.sub(r"`(.)", r"\1", arg[1:-1])
+    return None
+
+
+def _ps_dotnet(m: "re.Match[str]") -> str:
+    """Turn a .NET file call into the cmdlet that does the same write, so the cmdlet rules apply."""
+    if m.group(4):  # New-Object IO.StreamWriter('path')
+        path = _ps_literal(m.group(4))
+        return f"; Set-Content -LiteralPath {shlex.quote(path)} ;" if path is not None else m.group(0)
+    cls, method = m.group(1).lower(), m.group(2).lower()
+    args = [_ps_literal(a) for a in re.findall(_PS_STR + r"|[^,'\"]+", m.group(3)) if a.strip()]
+    if not args or args[0] is None:
+        return m.group(0)  # dynamic path: left to the Stop sweep, like any unresolved Bash target
+    q = [shlex.quote(a) if a is not None else "" for a in args]
+    if cls == "file" and method in _PS_FILE_WRITES:
+        value = f" -Value {q[1]}" if len(args) > 1 and args[1] is not None else ""
+        return f"; Set-Content -LiteralPath {q[0]}{value} ;"
+    cmdlet = _PS_DOTNET_CMDLET.get((cls, method))
+    if cmdlet == "New-Item":
+        return f"; New-Item -ItemType Directory -Path {q[0]} ;"
+    if cmdlet in ("Copy-Item", "Move-Item") and len(args) > 1 and args[1] is not None:
+        return f"; {cmdlet} {q[0]} {q[1]} ;"
+    if cmdlet == "Remove-Item":
+        return f"; Remove-Item {q[0]} ;"
+    return m.group(0)
 
 
 def from_powershell(text: str) -> str:
     """Rewrite a PowerShell command line into the POSIX shape parse() reads.
 
-    shortcut: covers blocks, here-strings, $env: assignments and backslash paths, not .NET calls
-    like [IO.File]::WriteAllText; extend if agents start using those.
+    Covers blocks, here-strings, $env: assignments, backslash paths and the .NET file calls
+    ([IO.File]::WriteAllText, [IO.Directory]::CreateDirectory, New-Object IO.StreamWriter, ...).
     """
+    text = _PS_DOTNET.sub(_ps_dotnet, text)
     text = _PS_HERE.sub(lambda m: shlex.quote(m.group(2)), text)
     text = text.replace("`\r\n", " ").replace("`\n", " ")
     text = _PS_ENV.sub(r"export \1=", text)

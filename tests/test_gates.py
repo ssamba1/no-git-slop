@@ -52,7 +52,9 @@ def test_intent_is_per_session(repo):
 
 def test_allow_once_code_round_trip(repo):
     result = hook("write", write_event(repo, "FIX_NOTES.md"), repo)
-    code = re.search(r"ngs-[0-9a-f]{6}", reason(result)).group(0)
+    match = re.search(r"ngs-[0-9a-f]{6}", reason(result))
+    assert match is not None
+    code = match.group(0)
     notice = prompt(repo, f"yes, keep it: {code}")
     assert "approved once" in notice["hookSpecificOutput"]["additionalContext"]
     assert hook("write", write_event(repo, "FIX_NOTES.md"), repo) is None
@@ -473,6 +475,7 @@ def test_parallel_hooks_all_decide(repo):
                               stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=repo)
              for _ in range(12)]
     for i, p in enumerate(procs):
+        assert p.stdin is not None
         p.stdin.write(json.dumps(write_event(repo, f"NOTES_{i}.md")).encode())
         p.stdin.close()
     outs = [p.communicate()[0] for p in procs]

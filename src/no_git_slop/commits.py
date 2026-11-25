@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from typing import List
+from typing import List, Sequence
 
 from .config import Config
 from .findings import Finding
@@ -130,7 +130,7 @@ def prose_findings(text: str, rule: str, config: Config) -> List[Finding]:
 
 
 def check_pr(title: str, body: str, config: Config, head: str = "", default_branch: str = "",
-             changed_files: List[str] = (), report_files: List[str] = ()) -> List[Finding]:
+             changed_files: Sequence[str] = (), report_files: Sequence[str] = ()) -> List[Finding]:
     """Author-side self-check before opening a PR, mirroring maintainer anti-slop filters."""
     out: List[Finding] = []
     if head and default_branch and head == default_branch:

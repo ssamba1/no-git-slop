@@ -85,12 +85,14 @@ def test_quoted_heredoc_commit_message_survives():
     command = "git commit -m \"$(cat <<'EOF'\nfeat(x): add y\n\nBody.\nEOF\n)\""
     [cmd] = shell.parse(command, CWD)
     call = shell.git_call(cmd)
+    assert call is not None
     assert shell.commit_message(call.args, CWD) == "feat(x): add y\n\nBody."
 
 
 def test_git_call_parses_global_options():
     [cmd] = shell.parse("git -C sub -c core.hooksPath=/dev/null --no-pager commit -m x", CWD)
     call = shell.git_call(cmd)
+    assert call is not None
     assert call.sub == "commit"
     assert call.cwd == CWD / "sub"
     assert call.configs == {"core.hookspath": "/dev/null"}
@@ -118,6 +120,7 @@ def test_commit_message_extraction(args, message):
 def test_gh_pr_create_parsing():
     [cmd] = shell.parse("gh pr create --title 'feat: x' --body 'I hope this helps' --base main", CWD)
     pr = shell.gh_pr_call(cmd)
+    assert pr is not None
     assert (pr.title, pr.body, pr.base) == ("feat: x", "I hope this helps", "main")
 
 

@@ -1,7 +1,7 @@
 {
   "name": "no-git-slop",
   "description": "Claude Code plugin that keeps git repositories free of AI clutter.",
-  "owner": {"name": "no-git-slop maintainers"},
+  "owner": {"name": "ssamba1"},
   "plugins": [
     {
       "name": "no-git-slop",

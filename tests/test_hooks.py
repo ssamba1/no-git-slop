@@ -5,6 +5,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -26,7 +27,7 @@ def repo(tmp_path):
     return tmp_path
 
 
-def hook(name, event, cwd):
+def hook(name, event, cwd) -> Any:
     out = subprocess.run([sys.executable, str(CLI), "hook", name], input=json.dumps(event),
                          capture_output=True, text=True, cwd=cwd)
     assert out.returncode == 0, out.stderr
@@ -182,6 +183,12 @@ def ps_event(repo, command):
     ("Copy-Item app.py app_copy.py", "deny"),
     (r"Remove-Item -Recurse -Force .git\hooks", "deny"),
     ("git commit -m @'\nfeat: add parser\n\n- a body line\n'@", None),
+    ("[IO.File]::WriteAllText('IMPLEMENTATION_SUMMARY.md', 'done')", "deny"),
+    (r'[System.IO.File]::AppendAllLines("notes_backup.md", $lines)', "deny"),
+    ("[IO.File]::Copy('app.py', 'app_copy.py', $true)", "deny"),
+    (r"[IO.File]::Delete('.git\hooks\pre-commit')", "deny"),
+    ("$w = New-Object System.IO.StreamWriter('COMMIT_REPORT.md'); $w.Close()", "deny"),
+    ("[IO.File]::ReadAllText('README.md')", None),
     ("git status; git diff --stat", None),
     ("Get-ChildItem -Recurse | Select-Object -First 5", None),
 ])

@@ -145,6 +145,7 @@ class Session:
 
     # -- persistence ---------------------------------------------------------
     def _lockfile(self) -> Path:
+        assert self.dir is not None  # callers check self.dir first
         return self.dir / f"session-{self.key}.lock"
 
     def save(self) -> None:
