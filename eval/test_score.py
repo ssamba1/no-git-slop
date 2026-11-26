@@ -66,6 +66,15 @@ def test_bulk_add_counts_only_commands_that_ran(tmp_path):
     assert score.score(root, base, TASKS["customer-totals"], t)["bulk_add_run"] == 2
 
 
+def test_codex_transcript_commands_are_parsed(tmp_path):
+    root, base = _repo(tmp_path)
+    t = tmp_path / "codex.jsonl"
+    t.write_text("\n".join(json.dumps({"type": "item.completed", "item": {
+        "id": f"item_{i}", "type": "command_execution", "command": f'powershell.exe -Command "{c}"'}})
+        for i, c in enumerate(["git add -A; git commit -m x", "git add -- src/x.py", "git status"])), encoding="utf-8")
+    assert score.score(root, base, TASKS["customer-totals"], t)["bulk_add_run"] == 1
+
+
 def test_hidden_checks_fail_on_the_untouched_fixture(tmp_path):
     root, _ = _repo(tmp_path)
     passing = {tid for tid, t in TASKS.items() if score.hidden_check(root, t["hidden"])}

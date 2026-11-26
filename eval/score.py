@@ -62,6 +62,10 @@ def commands(transcript: Path) -> list:
             e = json.loads(line)
         except ValueError:
             continue
+        item = e.get("item") or {}  # codex exec --json
+        if e.get("type") == "item.completed" and item.get("type") == "command_execution":
+            calls[item.get("id")] = str(item.get("command", ""))
+            continue
         msg = e.get("message") or {}
         for c in msg.get("content") or [] if isinstance(msg.get("content"), list) else []:
             if c.get("type") == "tool_use" and c.get("name") in ("Bash", "PowerShell"):
@@ -85,6 +89,8 @@ def run_info(transcript: Path) -> dict:
         if e.get("type") == "system" and e.get("subtype") == "init":
             info["model"] = e.get("model")
             info["plugins"] = [p.get("name") if isinstance(p, dict) else p for p in e.get("plugins") or []]
+        if e.get("type") == "turn.completed":  # codex: tokens only, no cost field
+            info["tokens"] = e.get("usage")
         if e.get("type") == "result":
             info["cost_usd"] = e.get("total_cost_usd")
             info["turns"] = e.get("num_turns")

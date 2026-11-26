@@ -7,6 +7,7 @@ All notable changes to this project are documented here. The format follows [Kee
 ### Added
 
 - Evaluation v2 (`eval/v2/`): untracked local files planted in the tree. The pilot found no session in any arm that committed them, so the full run was not started; results and reasons are in `eval/v2/README.md`.
+- `eval/run.py --agent codex --codex-home <dir>` runs the baseline arm on Codex CLI with the operator's `AGENTS.md`, hooks and config kept out. A 9-session Codex baseline found no stray files and no bulk staging.
 
 ### Fixed
 

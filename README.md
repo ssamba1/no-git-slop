@@ -148,9 +148,9 @@ A broken config falls back to the defaults. Hooks fail open on internal errors, 
 
 ## Does it work?
 
-Not measurably, for Claude on short tasks, as far as two preregistered evaluations can tell. In 42 headless sessions (Claude Sonnet and Haiku 5.5, with and without the plugin), Claude left **no** stray files, even on tasks that invite scratch scripts and copies ([v1](eval/README.md)). Sonnet often ran `git add -A`, but only in clean trees, where it was harmless. When the tree held untracked local files (a customer export, a `.env`, notes), no session in any arm bulk-added or committed them, plugin or not ([v2](eval/v2/README.md)).
+Not measurably, for Claude on short tasks, as far as two preregistered evaluations can tell. In 42 headless sessions (Claude Sonnet and Haiku 5.5, with and without the plugin), Claude left **no** stray files, even on tasks that invite scratch scripts and copies ([v1](eval/README.md)). Sonnet often ran `git add -A`, but only in clean trees, where it was harmless. When the tree held untracked local files (a customer export, a `.env`, notes), no session in any arm bulk-added or committed them, plugin or not ([v2](eval/v2/README.md)). Codex (`gpt-6-sol`, no plugin) did the same in 9 more sessions: no stray files, and it staged by path every time, even in a clean tree.
 
-So the measured benefit for Claude on short tasks is zero, because Claude didn't make the mistakes. What no-git-slop offers is a hard stop for when an agent does: long sessions, older or weaker models, other agents through the Codex, Gemini and Cursor adapters, and people through the git hooks and CI. None of those has been measured yet.
+So the measured benefit on short tasks is zero, for Claude and for Codex, because neither made the mistakes. What no-git-slop offers is a hard stop for when an agent does: long sessions, older or weaker models, other agents through the Codex, Gemini and Cursor adapters, and people through the git hooks and CI. None of those has been measured yet.
 
 ## Research
 

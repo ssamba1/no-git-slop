@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import random
 import shutil
 import subprocess
@@ -91,23 +92,35 @@ def claude_argv(arm: str, prompt: str, model: str, budget: float) -> list:
     return argv
 
 
+def codex_argv(arm: str, prompt: str, model: str) -> list:
+    # Baseline only. User instructions, hooks and config stay out through a fresh CODEX_HOME (see main).
+    if arm != "baseline":
+        raise SystemExit("--agent codex supports only the baseline arm")
+    return [shutil.which("codex") or "codex", "exec", "--json", "--ephemeral", "--ignore-rules",
+            "--dangerously-bypass-approvals-and-sandbox", "--skip-git-repo-check", "-m", model, prompt]
+
+
 def run_trial(task: dict, arm: str, trial: int, out: Path, model: str, budget: float, timeout: int,
-              plant: bool = False) -> dict:
+              plant: bool = False, agent: str = "claude", env=None) -> dict:
     root = make_workdir(arm, plant)
     base = git(root, "rev-parse", "HEAD").strip()
     name = f"{task['id']}--{arm}--{trial}"
     transcript = out / f"{name}.jsonl"
+    argv = codex_argv(arm, task["prompt"], model) if agent == "codex" else claude_argv(arm, task["prompt"], model, budget)
     started = time.time()
     try:
         with open(transcript, "w", encoding="utf-8") as fh:
-            proc = subprocess.run(claude_argv(arm, task["prompt"], model, budget), cwd=root, stdout=fh,
-                                  stderr=subprocess.PIPE, text=True, timeout=timeout)
+            proc = subprocess.run(argv, cwd=root, stdout=fh, stdin=subprocess.DEVNULL, env=env,
+                                  stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace",
+                                  timeout=timeout)
         error = proc.stderr[-2000:] if proc.returncode else ""
     except subprocess.TimeoutExpired:
         error = f"timed out after {timeout}s"
     result = {"task": task["id"], "arm": arm, "trial": trial, "seconds": round(time.time() - started),
               "error": error, "workdir": str(root), **score.score(root, base, task, transcript, tuple(PLANTED) if plant else ())}
     result["plugin_loaded"] = any("no-git-slop" in str(p) for p in result.get("plugins") or [])
+    if agent == "codex":
+        result.update(agent="codex", model=model)
     (out / f"{name}.score.json").write_text(json.dumps(result, indent=1), encoding="utf-8")
     return result
 
@@ -124,7 +137,15 @@ def main() -> int:
     ap.add_argument("--out", required=True)
     ap.add_argument("--tasks-file", default=str(HERE / "tasks.json"))
     ap.add_argument("--plant", action="store_true", help="leave untracked local files in the tree (v2)")
+    ap.add_argument("--agent", choices=("claude", "codex"), default="claude")
+    ap.add_argument("--codex-home", help="fresh CODEX_HOME holding only auth.json, so the operator's AGENTS.md, "
+                                         "hooks and config stay out (required with --agent codex)")
     args = ap.parse_args()
+    env = None
+    if args.agent == "codex":
+        if not args.codex_home or (Path(args.codex_home) / "AGENTS.md").exists():
+            raise SystemExit("--agent codex needs --codex-home pointing at a directory without AGENTS.md")
+        env = {**os.environ, "CODEX_HOME": str(Path(args.codex_home).resolve())}
     tasks = json.loads(Path(args.tasks_file).read_text(encoding="utf-8"))
     if args.tasks == "pilot":
         tasks = [t for t in tasks if t.get("pilot")]
@@ -138,7 +159,7 @@ def main() -> int:
     for t, a, n in jobs:
         if (out / f"{t['id']}--{a}--{n}.score.json").exists():
             continue  # resumable
-        r = run_trial(t, a, n, out, args.model, args.budget, args.timeout, args.plant)
+        r = run_trial(t, a, n, out, args.model, args.budget, args.timeout, args.plant, args.agent, env)
         print(json.dumps({k: r.get(k) for k in ("task", "arm", "trial", "stray", "stray_files", "bulk_add_run", "planted_committed",
                                                   "hidden_pass", "cost_usd", "plugin_loaded", "error")}),
               flush=True)
