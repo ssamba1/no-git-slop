@@ -34,7 +34,7 @@ def _random_name(rng):
     return "".join(rng.choice(alphabet) for _ in range(rng.randint(1, 40)))
 
 
-def test_fuzzed_paths_and_commands_never_crash_or_execute(tmp_path):
+def test_fuzzed_paths_and_commands_never_crash_or_execute(tmp_path, monkeypatch):
     repo = make_repo(tmp_path / "fuzz" if (tmp_path / "fuzz").mkdir() is None else tmp_path)
     rng = random.Random(1234)
     canary = tmp_path / "PWNED"
@@ -46,13 +46,37 @@ def test_fuzzed_paths_and_commands_never_crash_or_execute(tmp_path):
                             (bash_event(repo, f"touch {name!s}", session="fz"), "bash"),
                             (bash_event(repo, f"git commit -m {name!r}", session="fz"), "bash"),
                             (bash_event(repo, name, session="fz"), "bash")):
-            proc = subprocess.run([sys.executable, str(CLI), "hook", kind], input=json.dumps(event),
-                                  capture_output=True, text=True, cwd=repo, timeout=30)
-            assert proc.returncode == 0
-            assert "skipped after an error" not in proc.stderr, (name, proc.stderr)
-            if proc.stdout.strip():
-                json.loads(proc.stdout)
+            # In-process: 600 hook calls as subprocesses took 13 minutes. An injected command would
+            # still create the canary, so the check is the same.
+            code, out, err = _run_hook_in_process(kind, json.dumps(event), repo, monkeypatch)
+            assert code == 0
+            assert "skipped after an error" not in err, (name, err)
+            if out.strip():
+                json.loads(out)
     assert not canary.exists(), "a hook executed part of its input"
+    # One real subprocess per payload keeps the launcher itself covered.
+    for name in payloads:
+        proc = subprocess.run([sys.executable, str(CLI), "hook", "bash"],
+                              input=json.dumps(bash_event(repo, name, session="fz")),
+                              capture_output=True, text=True, cwd=repo, timeout=60)
+        assert proc.returncode == 0 and "skipped after an error" not in proc.stderr
+    assert not canary.exists(), "a hook executed part of its input"
+
+
+def _run_hook_in_process(kind, stdin_text, cwd, monkeypatch):
+    import io
+    sys.path.insert(0, str(CLI.parents[1] / "src"))
+    from no_git_slop import hooks
+    out, err = io.StringIO(), io.StringIO()
+    monkeypatch.chdir(cwd)
+    monkeypatch.setattr(sys, "stdin", io.StringIO(stdin_text))
+    monkeypatch.setattr(sys, "stdout", out)
+    monkeypatch.setattr(sys, "stderr", err)
+    try:
+        code = hooks.run(kind)
+    finally:
+        monkeypatch.undo()
+    return code, out.getvalue(), err.getvalue()
 
 
 @pytest.mark.parametrize("payload", ["", "null", "[]", "42", "{\"tool_input\": null}",
