@@ -75,7 +75,7 @@ _RULES = [
     # --- staging -------------------------------------------------------------------
     Rule("bulk-add", "deny", "git", "Bulk staging",
          "git add -A / . / :/ / * sweeps stray files into the commit "
-         "(and fails under Claude Code's sandbox anyway).",
+         "(and fails under agent sandboxes anyway).",
          "Stage the files you changed by path."),
     Rule("pathspec-file", "ask", "git", "Staging from a pathspec file",
          "--pathspec-from-file can stage anything; the list isn't visible here.",

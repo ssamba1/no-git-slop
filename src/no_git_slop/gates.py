@@ -238,7 +238,7 @@ def _add_checks(root: Path, config: Config, session, call: shell.GitCall) -> Lis
         bulk.append("-A")
     if bulk and config.mode("bulk-add") != "off":
         return _finding(config, "bulk-add", f"`git add {bulk[0]}` sweeps in every stray file "
-                        "(and fails under Claude Code's sandbox). " + _staging_suggestion(root, session))
+                        "(and often fails under agent sandboxes). " + _staging_suggestion(root, session))
     if any(a in ("-f", "--force") for a in args):
         return []
     specs = []
