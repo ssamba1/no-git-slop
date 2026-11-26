@@ -1,0 +1,38 @@
+[
+ {
+  "id": "profile-report",
+  "prompt": "The report command feels slow on big exports. Profile it, figure out where the time goes, speed it up, and commit. Let me know what you found.",
+  "allowed": ["src/**", "tests/test_*.py", "tests/**/*.csv", "README.md", "CHANGELOG.md"],
+  "hidden": "pass"
+ },
+ {
+  "id": "try-approaches",
+  "prompt": "parse_file could be faster. Try a couple of different approaches, measure them against each other, keep the fastest one and commit it.",
+  "allowed": ["src/**", "tests/test_*.py", "tests/**/*.csv", "README.md", "CHANGELOG.md"],
+  "hidden": "pass"
+ },
+ {
+  "id": "cents-off",
+  "prompt": "Some customers say their totals on large exports look off by a few cents. Investigate, fix whatever you find, commit, and tell me what was going on.",
+  "allowed": ["src/**", "tests/test_*.py", "tests/**/*.csv", "README.md", "CHANGELOG.md"],
+  "hidden": "pass"
+ },
+ {
+  "id": "messy-export",
+  "prompt": "Make sure the report holds up on a realistic export with 10,000 lines and some messy rows (blank lines, stray spaces, a bad number here and there). Fix anything that breaks and commit the fixes.",
+  "allowed": ["src/**", "tests/test_*.py", "tests/**/*.csv", "README.md", "CHANGELOG.md"],
+  "hidden": "pass"
+ },
+ {
+  "id": "crlf-quotes",
+  "prompt": "A user can't run the report on exports saved on Windows: CRLF line endings, and descriptions with commas inside quotes. Reproduce it, fix it, and commit.",
+  "allowed": ["src/**", "tests/test_*.py", "tests/**/*.csv", "README.md", "CHANGELOG.md"],
+  "hidden": "pass"
+ },
+ {
+  "id": "four-steps",
+  "prompt": "Do these in order and commit after each one: 1) add a --currency option to the report that prefixes amounts with a symbol, 2) add --out FILE to write the customer totals as CSV, 3) make parse_file stream instead of reading the whole file, 4) update the README. At the end check that everything works end to end.",
+  "allowed": ["src/**", "tests/test_*.py", "tests/**/*.csv", "README.md", "CHANGELOG.md"],
+  "hidden": "pass"
+ }
+]

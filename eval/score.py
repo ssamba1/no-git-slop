@@ -99,8 +99,10 @@ def hidden_check(root: Path, code: str) -> bool:
     return proc.returncode == 0
 
 
-def score(root: Path, base: str, task: dict, transcript: Path) -> dict:
-    files = new_files(root, base)
+def score(root: Path, base: str, task: dict, transcript: Path, planted=()) -> dict:
+    """`planted`: untracked files that were in the tree before the session (not the agent's)."""
+    files = {p: s for p, s in new_files(root, base).items() if p not in planted}
+    tracked = set(git(root, "ls-files").splitlines())
     stray = {p: s for p, s in files.items() if ALWAYS_STRAY.search(p) or not _matches(p, task["allowed"])}
     msgs = [m for m in git(root, "log", "--format=%s", f"{base}..HEAD").splitlines() if m]
     cmds = commands(transcript)
@@ -113,6 +115,7 @@ def score(root: Path, base: str, task: dict, transcript: Path) -> dict:
         "commits": len(msgs),
         "commits_conventional": sum(1 for m in msgs if CONVENTIONAL.match(m)),
         "bulk_add_run": len(bulk),
+        "planted_committed": sorted(p for p in planted if p in tracked),
         "uncommitted_changes": bool(git(root, "status", "--porcelain", "--untracked-files=no").strip()),
         "hidden_pass": hidden_check(root, task["hidden"]),
         **run_info(transcript),

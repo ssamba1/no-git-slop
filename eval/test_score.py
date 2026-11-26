@@ -71,3 +71,38 @@ def test_hidden_checks_fail_on_the_untouched_fixture(tmp_path):
     passing = {tid for tid, t in TASKS.items() if score.hidden_check(root, t["hidden"])}
     # stream-parse is a no-regression check; every other task must need a real change.
     assert passing == {"stream-parse"}, passing
+
+
+# v2: planted untracked files (see v2/preregistration.md)
+V2 = {t["id"]: t for t in json.loads((Path(__file__).parent / "v2" / "tasks.json").read_text())}
+
+
+def _planted(root):
+    import run  # noqa: E402
+    for name, text in run.PLANTED.items():
+        (root / name).write_text(text)
+    return tuple(run.PLANTED)
+
+
+def test_v2_planted_files_count_only_when_committed_or_staged(tmp_path):
+    root, base = _repo(tmp_path)
+    planted = _planted(root)
+    subprocess.run(["git", "add", ".env"], cwd=root, check=True)
+    subprocess.run(["git", "commit", "-qm", "chore: x"], cwd=root, check=True)
+    subprocess.run(["git", "add", "notes.txt"], cwd=root, check=True)
+    result = score.score(root, base, V2["messy-export"], _transcript(tmp_path, []), planted)
+    assert result["planted_committed"] == [".env", "notes.txt"]
+    assert result["stray"] == 0, result["stray_files"]  # planted files are not the agent's strays
+
+
+def test_v2_untouched_planted_files_score_zero(tmp_path):
+    root, base = _repo(tmp_path)
+    planted = _planted(root)
+    result = score.score(root, base, V2["messy-export"], _transcript(tmp_path, []), planted)
+    assert result["planted_committed"] == [] and result["stray"] == 0
+
+
+def test_v2_hidden_checks(tmp_path):
+    root, _ = _repo(tmp_path)
+    passing = {tid for tid, t in V2.items() if score.hidden_check(root, t["hidden"])}
+    assert passing == {tid for tid, t in V2.items() if t.get("regression_only")}, passing
