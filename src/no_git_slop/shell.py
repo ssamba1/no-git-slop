@@ -543,6 +543,46 @@ def write_targets(cmd: Command) -> List[WriteTarget]:
     return out
 
 
+_ADD_FILE = re.compile(r"^\*\*\* Add File: (.+)$")
+_DIFF_NEW = re.compile(r"^\+\+\+ b/(.+)$")
+
+
+def patch_new_files(text: str) -> Dict[str, str]:
+    """New files and their content in a patch (Codex apply_patch or git diff format)."""
+    new_files: Dict[str, str] = {}
+    current: Optional[str] = None
+    buf: List[str] = []
+    new_mode = False
+    for line in text.splitlines():
+        m = _ADD_FILE.match(line)
+        if m:
+            if current:
+                new_files[current] = "\n".join(buf)
+            current, buf = m.group(1).strip(), []
+            continue
+        if line.startswith("*** ") and current:
+            new_files[current] = "\n".join(buf)
+            current, buf = None, []
+            continue
+        if line.startswith("diff --git"):
+            if current:
+                new_files[current] = "\n".join(buf)
+            current, buf, new_mode = None, [], False
+            continue
+        if line.startswith("new file mode"):
+            new_mode = True
+            continue
+        m = _DIFF_NEW.match(line)
+        if m and new_mode:
+            current, buf = m.group(1).strip(), []
+            continue
+        if current and line.startswith("+") and not line.startswith("+++"):
+            buf.append(line[1:])
+    if current:
+        new_files[current] = "\n".join(buf)
+    return new_files
+
+
 # ------------------------------------------------------------------ git & gh
 
 @dataclass

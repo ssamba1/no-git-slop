@@ -68,7 +68,25 @@ no-git-slop init --hooks     # git-ignores .scratch/, installs pre-commit, commi
 
 - pre-commit framework: copy [`templates/.pre-commit-config.yaml`](templates/.pre-commit-config.yaml).
 - GitHub Actions: copy [`templates/github-workflow.yml`](templates/github-workflow.yml). It checks new files, commit messages and the PR description.
-- Other agents (Cursor, Codex, Gemini): copy [`templates/AGENTS.md`](templates/AGENTS.md), and pipe their patches through `no-git-slop check-patch` (it reads Codex `*** Add File:` and git diff formats).
+**Codex CLI, Gemini CLI and Cursor:** the same checks run through each agent's own hooks.
+
+```
+no-git-slop init --agent codex      # writes .codex/hooks.json
+no-git-slop init --agent gemini     # adds hooks to .gemini/settings.json
+no-git-slop init --agent cursor     # writes .cursor/hooks.json
+```
+
+Existing hook entries and settings are kept; running it again replaces only no-git-slop's own entries.
+
+| | Codex | Gemini CLI | Cursor |
+|---|---|---|---|
+| Shell commands | `PreToolUse` (Bash) | `BeforeTool` (`run_shell_command`) | `beforeShellExecution` |
+| New files | `PreToolUse` (`apply_patch`) | `BeforeTool` (`write_file`) | `preToolUse` (Write) |
+| Your prompt (named files, approval codes) | `UserPromptSubmit` | `BeforeAgent` | recorded, no reply possible |
+| Cleanup before finishing | `Stop` | `AfterAgent` (retry) | `stop` (follow-up message) |
+| "Ask" decisions | become deny + "ask the user" | same | kept for shell, deny for writes |
+
+Tested: the Codex adapter in live `codex exec` sessions (0.155.1 on Windows), where the hook denied a `git add -A`. Those runs passed the generated hooks inline (`codex exec -c 'hooks.PreToolUse=[...]'`); in the same tests the project's `.codex/hooks.json` did not load, even with a one-run trust override, so if Codex ignores it, check that the project is trusted or copy the entries into `~/.codex/hooks.json`. Gemini and Cursor were tested against the event formats in their docs, not in a live session. Other agents can also copy [`templates/AGENTS.md`](templates/AGENTS.md) or pipe patches through `no-git-slop check-patch`.
 
 ## Commands
 

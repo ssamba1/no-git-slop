@@ -13,6 +13,12 @@ if len(sys.argv) == 3 and sys.argv[1] == "hook":
     if sys.argv[2] in hooks.HANDLERS:
         sys.exit(hooks.run(sys.argv[2]))
 
+if len(sys.argv) == 4 and sys.argv[1] == "hook-agent":
+    from no_git_slop import adapters  # noqa: E402
+
+    if sys.argv[2] in adapters.AGENTS:
+        sys.exit(adapters.run(sys.argv[2], sys.argv[3]))
+
 from no_git_slop.cli import main  # noqa: E402
 
 sys.exit(main())

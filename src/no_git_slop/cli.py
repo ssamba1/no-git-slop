@@ -7,14 +7,13 @@ import collections
 import datetime
 import json
 import os
-import re
 import shutil
 import stat
 import subprocess
 import sys
 from pathlib import Path
 
-from . import __version__, gitutil, hooks, index, state
+from . import __version__, adapters, gitutil, hooks, index, shell, state
 from .commits import check_commit_message, churn_findings
 from .config import CONFIG_FILE, load_config
 from .findings import ORDER, RULES
@@ -121,43 +120,11 @@ def cmd_pr(args) -> int:
     return _print_findings(findings, args.json)
 
 
-_ADD_FILE = re.compile(r"^\*\*\* Add File: (.+)$")
-_DIFF_NEW = re.compile(r"^\+\+\+ b/(.+)$")
-
-
 def cmd_check_patch(args) -> int:
     """Judge new files in a patch read from stdin (Codex apply_patch or git diff format)."""
     root = _root()
     config = load_config(root)
-    text = sys.stdin.read()
-    new_files, current, buf, new_mode = {}, None, [], False
-    for line in text.splitlines():
-        m = _ADD_FILE.match(line)
-        if m:
-            if current:
-                new_files[current] = "\n".join(buf)
-            current, buf = m.group(1).strip(), []
-            continue
-        if line.startswith("*** ") and current:
-            new_files[current] = "\n".join(buf)
-            current, buf = None, []
-            continue
-        if line.startswith("diff --git"):
-            if current:
-                new_files[current] = "\n".join(buf)
-            current, buf, new_mode = None, [], False
-            continue
-        if line.startswith("new file mode"):
-            new_mode = True
-            continue
-        m = _DIFF_NEW.match(line)
-        if m and new_mode:
-            current, buf = m.group(1).strip(), []
-            continue
-        if current and line.startswith("+") and not line.startswith("+++"):
-            buf.append(line[1:])
-    if current:
-        new_files[current] = "\n".join(buf)
+    new_files = shell.patch_new_files(sys.stdin.read())
     findings = [judge_new_file(p, root, config, None, content=c) for p, c in new_files.items()
                 if not (root / p).exists()]
     return _print_findings(findings, args.json)
@@ -284,14 +251,7 @@ def cmd_init(args) -> int:
         if gd is None:
             print("Could not find this repo's .git folder, so no hooks were installed.")
             return 1
-        py =Path(sys.executable).as_posix()
-        script = Path(sys.argv[0])
-        # A real launcher script (bin/no-git-slop, a POSIX pip wrapper) runs as a file; otherwise
-        # (a Windows .exe wrapper, `python -m no_git_slop`) run the installed package.
-        if script.is_file() and script.name != "__main__.py" and script.suffix.lower() != ".exe":
-            run = f'"{py}" "{script.resolve().as_posix()}"'
-        else:
-            run = f'"{py}" -m no_git_slop'
+        run = _self_command()
         for name, sub in _HOOK_SCRIPTS.items():
             hook = gd / "hooks" / name
             if hook.exists() and _MARKER not in hook.read_text(encoding="utf-8", errors="replace"):
@@ -302,7 +262,38 @@ def cmd_init(args) -> int:
                             encoding="utf-8")
             hook.chmod(hook.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
             print(f"Installed git {name} hook")
+    for agent in args.agent or []:
+        rel, ours = adapters.hook_config(agent, _self_argv())
+        path = root / rel
+        try:
+            existing = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+        except ValueError:
+            print(f"Skipped {agent}: {rel} is not valid JSON. Fix it, then run this again.")
+            continue
+        if not isinstance(existing, dict):
+            print(f"Skipped {agent}: {rel} is not a JSON object.")
+            continue
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(adapters.merge_config(existing, ours), indent=2) + "\n", encoding="utf-8")
+        print(f"Installed {agent} hooks in {rel}" + (" (trust the project in Codex to load them)"
+                                                     if agent == "codex" else ""))
     return 0
+
+
+def _self_argv() -> list:
+    """How a hook should start this same no-git-slop install."""
+    py = Path(sys.executable).as_posix()
+    script = Path(sys.argv[0])
+    # A real launcher script (bin/no-git-slop, a POSIX pip wrapper) runs as a file; otherwise
+    # (a Windows .exe wrapper, `python -m no_git_slop`) run the installed package.
+    if script.is_file() and script.name != "__main__.py" and script.suffix.lower() != ".exe":
+        return [py, script.resolve().as_posix()]
+    return [py, "-m", "no_git_slop"]
+
+
+def _self_command() -> str:
+    """The same, for a POSIX sh git hook."""
+    return " ".join(f'"{a}"' if a != "-m" and a != "no_git_slop" else a for a in _self_argv())
 
 
 # ---------------------------------------------------------------- doctor
@@ -397,12 +388,19 @@ def main(argv=None) -> int:
 
     p = add("init", cmd_init, "git-ignore the scratch folder; --hooks installs git hooks")
     p.add_argument("--hooks", action="store_true")
+    p.add_argument("--agent", action="append", choices=adapters.AGENTS,
+                   help="also install hooks for this agent (repeatable)")
 
     add("doctor", cmd_doctor, "show what no-git-slop sees in this repo")
 
     p = sub.add_parser("hook", help="Claude Code hook entry point")
     p.add_argument("name", choices=sorted(hooks.HANDLERS))
     p.set_defaults(func=lambda a: hooks.run(a.name))
+
+    p = sub.add_parser("hook-agent", help="hook entry point for Codex, Gemini CLI and Cursor")
+    p.add_argument("agent", choices=adapters.AGENTS)
+    p.add_argument("event", help="the agent's own event name, e.g. PreToolUse or beforeShellExecution")
+    p.set_defaults(func=lambda a: adapters.run(a.agent, a.event))
 
     for stream in (sys.stdout, sys.stderr):
         try:  # Windows pipes are cp1252; a ✗ mark must not turn a finding into a traceback
