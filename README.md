@@ -86,7 +86,9 @@ Existing hook entries and settings are kept; running it again replaces only no-g
 | Cleanup before finishing | `Stop` | `AfterAgent` (retry) | `stop` (follow-up message) |
 | "Ask" decisions | become deny + "ask the user" | same | kept for shell, deny for writes |
 
-Tested: the Codex adapter in live `codex exec` sessions (0.155.1 on Windows), where the hook denied a `git add -A`. Those runs passed the generated hooks inline (`codex exec -c 'hooks.PreToolUse=[...]'`); in the same tests the project's `.codex/hooks.json` did not load, even with a one-run trust override, so if Codex ignores it, check that the project is trusted or copy the entries into `~/.codex/hooks.json`. Gemini and Cursor were tested against the event formats in their docs, not in a live session. Other agents can also copy [`templates/AGENTS.md`](templates/AGENTS.md) or pipe patches through `no-git-slop check-patch`.
+**Codex needs two approvals.** The project must be trusted, and each hook must be approved in `/hooks`, because Codex records trust against the hook's exact definition and skips new or changed hooks until you approve them ([Codex hooks](https://learn.chatgpt.com/docs/hooks)). Re-running `init` changes nothing if the entries are the same, but an upgrade that changes the command line asks again.
+
+Tested: the Codex adapter in live `codex exec` sessions (0.155.1 on Windows). With hooks passed inline, the PreToolUse hook denied a `git add -A`. With the project's `.codex/hooks.json` (and `--dangerously-bypass-hook-trust` standing in for the `/hooks` approval), the SessionStart, UserPromptSubmit and Stop hooks ran, and the session-start reminder alone was enough for Codex to refuse `git add -A` before the hook had to. Gemini and Cursor were tested against the event formats in their docs, not in a live session. Other agents can also copy [`templates/AGENTS.md`](templates/AGENTS.md) or pipe patches through `no-git-slop check-patch`.
 
 ## Commands
 

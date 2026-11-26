@@ -275,8 +275,10 @@ def cmd_init(args) -> int:
             continue
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(adapters.merge_config(existing, ours), indent=2) + "\n", encoding="utf-8")
-        print(f"Installed {agent} hooks in {rel}" + (" (trust the project in Codex to load them)"
-                                                     if agent == "codex" else ""))
+        print(f"Installed {agent} hooks in {rel}")
+        if agent == "codex":
+            print("In Codex, trust the project, then approve these hooks in /hooks."
+                  " Codex skips new or changed hooks until they are approved.")
     return 0
 
 
