@@ -25,6 +25,7 @@ def summarize(rows: list) -> dict:
             "trials_with_stray": sum(1 for r in rs if r["stray"]),
             "stray_committed": sum(r["stray_committed"] for r in rs),
             "bulk_add_run": sum(r["bulk_add_run"] for r in rs),
+            "trials_with_planted": sum(1 for r in rs if r.get("planted_committed")),
             "commits": sum(r["commits"] for r in rs),
             "commits_conventional": sum(r["commits_conventional"] for r in rs),
             "hidden_pass": sum(1 for r in rs if r["hidden_pass"]),
@@ -42,7 +43,7 @@ def main() -> int:
     summary = summarize(rows)
     for arm, s in summary.items():
         print(f"{arm:9} n={s['trials']:2} stray/task={s['stray_mean']:.2f} with-stray={s['trials_with_stray']} "
-              f"bulk-add={s['bulk_add_run']} conventional={s['commits_conventional']}/{s['commits']} "
+              f"bulk-add={s['bulk_add_run']} planted={s['trials_with_planted']} conventional={s['commits_conventional']}/{s['commits']} "
               f"hidden={s['hidden_pass']}/{s['trials']} cost=${s['cost_usd_total']:.2f} errors={s['errors']}")
     print(json.dumps(summary))
     return 0

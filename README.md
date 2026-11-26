@@ -144,11 +144,13 @@ A broken config falls back to the defaults. Hooks fail open on internal errors, 
 - Duplicated *logic* inside files needs jscpd or similar (`check --deep`). The built-in near-duplicate check compares whole files.
 - Shell commands built at runtime (variables, `$(...)`, globs) can't be read statically. Those files are caught by the Stop sweep.
 - Name-based rules will occasionally misfire. Approve with the code, or add an `allow` glob.
-- Nobody has measured stray-file rates for any tool, including this one. `no-git-slop stats` keeps a local record (never sent anywhere) so you can.
+- Real-world stray-file rates are still unmeasured for every tool, including this one; the lab evaluations above found none to prevent. `no-git-slop stats` keeps a local record (never sent anywhere) so you can.
 
 ## Does it work?
 
-Not proven yet. A preregistered pilot ([eval/](eval/README.md), 12 sessions, Claude Sonnet) found that on short, clear tasks Claude left **no** stray files with or without the plugin, so those tasks can't show an effect. Bulk `git add -A` did differ (2 of 3 sessions without the plugin, 0 of 3 with it), but the rules written into `CLAUDE.md` did as well, and the hooks never had to fire. What the hooks add over instructions is a hard stop when an agent ignores them, which is most likely in long sessions and on vague tasks; measuring that is the next evaluation.
+Not measurably, for Claude on short tasks, as far as two preregistered evaluations can tell. In 42 headless sessions (Claude Sonnet and Haiku 5.5, with and without the plugin), Claude left **no** stray files, even on tasks that invite scratch scripts and copies ([v1](eval/README.md)). Sonnet often ran `git add -A`, but only in clean trees, where it was harmless. When the tree held untracked local files (a customer export, a `.env`, notes), no session in any arm bulk-added or committed them, plugin or not ([v2](eval/v2/README.md)).
+
+So the measured benefit for Claude on short tasks is zero, because Claude didn't make the mistakes. What no-git-slop offers is a hard stop for when an agent does: long sessions, older or weaker models, other agents through the Codex, Gemini and Cursor adapters, and people through the git hooks and CI. None of those has been measured yet.
 
 ## Research
 

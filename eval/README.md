@@ -1,5 +1,7 @@
 # Evaluation
 
+v2, with untracked local files planted in the tree, is in [v2/](v2/README.md). This page is v1.
+
 A four-arm test of whether no-git-slop changes what Claude Code leaves in a repository. The design and its pass bars are in [preregistration.md](preregistration.md), committed before the first paid session.
 
 ```
@@ -29,4 +31,4 @@ What it shows, and what it doesn't:
 
 Decision: the full 96-session run was **not** started. At about $12 it is cheap, but it would score 0 against 0 on the primary outcome. The next version of this evaluation needs tasks where agents do leave slop: long multi-step sessions, vague requests, and work that runs into failures. That's a new preregistration, not an edit to this one.
 
-Limits: one model, one OS, tasks written by the same AI session that built the plugin, and the operator's user-level `CLAUDE.md` may have loaded in every arm (`--bare` would have excluded it but needs an API key).
+Limits: one model, one OS, tasks written by the same AI session that built the plugin, and the operator's user-level `CLAUDE.md` loaded in every arm (confirmed later; v2 excludes it with `claudeMdExcludes`).

@@ -8,3 +8,4 @@ dist/
 
 # Throwaway work (no-git-slop)
 .scratch/
+eval-runs/

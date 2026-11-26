@@ -4,6 +4,15 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+
+- Evaluation v2 (`eval/v2/`): untracked local files planted in the tree. The pilot found no session in any arm that committed them, so the full run was not started; results and reasons are in `eval/v2/README.md`.
+
+### Fixed
+
+- `init --agent codex` now says that Codex runs project hooks only after they are approved in `/hooks`, which is why `.codex/hooks.json` seemed not to load.
+- The evaluation runner excludes the operator's `~/.claude/CLAUDE.md` (`claudeMdExcludes`); v1 sessions loaded it.
+
 ## [0.3.0] - 2026-11-26
 
 ### Added
