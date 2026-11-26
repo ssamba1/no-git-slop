@@ -8,6 +8,7 @@ Command templates are configurable in .no-git-slop.json under
 
 from __future__ import annotations
 
+import re
 import shlex
 import shutil
 import subprocess
@@ -21,7 +22,7 @@ DEFAULTS: Dict[str, str] = {
     "jscpd": "jscpd --silent --min-lines 8 --threshold 0 {files}",
     "vulture": "vulture --min-confidence 80 {py_files}",
     "knip": "knip --no-progress",
-    "aislop": "aislop scan --staged",
+    "aislop": "aislop scan --changes",
 }
 _CODE_EXT = {".py", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".go", ".rs", ".rb", ".java",
              ".kt", ".swift", ".c", ".cc", ".cpp", ".h", ".hpp", ".cs", ".php", ".scala"}
@@ -39,10 +40,12 @@ def _changed_files(root: Path) -> List[str]:
 
 
 def _executable(root: Path, name: str) -> str:
-    local = root / "node_modules" / ".bin" / name
-    if local.exists():
-        return str(local)
-    return shutil.which(name) or ""
+    # which() honors PATHEXT, so on Windows it picks node_modules/.bin/x.cmd, not the sh shim.
+    return shutil.which(name, path=str(root / "node_modules" / ".bin")) or shutil.which(name) or ""
+
+
+_MAX_ARGV_CHARS = 30_000  # Windows rejects command lines over 32,767 characters
+_ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 
 
 def run_all(root: Path, configured: Dict[str, str], timeout: int = 300) -> List[dict]:
@@ -80,13 +83,17 @@ def run_all(root: Path, configured: Dict[str, str], timeout: int = 300) -> List[
         if empty:
             results.append({"name": name, "status": "skipped", "output": "no changed files to check"})
             continue
+        if sum(len(a) + 1 for a in argv) > _MAX_ARGV_CHARS:
+            results.append({"name": name, "status": "skipped",
+                            "output": f"too many changed files for one command line; run {name} directly"})
+            continue
         try:
             proc = subprocess.run(argv, cwd=str(root), capture_output=True, text=True,
                                   encoding="utf-8", errors="replace", timeout=timeout)
         except (OSError, subprocess.SubprocessError) as exc:
             results.append({"name": name, "status": "failed", "output": str(exc)})
             continue
-        output = (proc.stdout + proc.stderr).strip()
+        output = _ANSI.sub("", proc.stdout + proc.stderr).strip()
         results.append({"name": name, "status": "ran", "exit": proc.returncode,
                         "output": "\n".join(output.splitlines()[-25:])})
     return results

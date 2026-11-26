@@ -30,6 +30,27 @@ def test_check_deep_reports_tool_status(repo):
     assert all(s in ("ran", "unavailable", "skipped", "failed") for s in statuses.values())
 
 
+def test_check_deep_runs_project_local_tool(repo):
+    # A fake jscpd in node_modules/.bin, written as the .cmd shim on Windows and a script elsewhere.
+    import sys
+    bin_dir = repo / "node_modules" / ".bin"
+    bin_dir.mkdir(parents=True)
+    (repo / ".gitignore").write_text("node_modules/\n")
+    (repo / "new.py").write_text("x = 1\n")
+    if sys.platform == "win32":
+        (bin_dir / "jscpd").write_text("#!/bin/sh\necho sh-shim\n")  # what npm also writes; not runnable here
+        (bin_dir / "jscpd.cmd").write_text("@echo \x1b[1mfake jscpd\x1b[22m %*\r\n")
+    else:
+        shim = bin_dir / "jscpd"
+        shim.write_text("#!/bin/sh\nprintf '\\033[1mfake jscpd\\033[22m %s\\n' \"$*\"\n")
+        shim.chmod(0o755)
+    out = run_cli(repo, "check", "--deep", "--json")
+    [jscpd] = [r for r in json.loads(out.stdout)["integrations"] if r["name"] == "jscpd"]
+    assert jscpd["status"] == "ran", jscpd
+    assert "fake jscpd" in jscpd["output"] and "new.py" in jscpd["output"]
+    assert "\x1b" not in jscpd["output"]
+
+
 def test_explain(repo):
     out = run_cli(repo, "explain", "bulk-add")
     assert out.returncode == 0 and "why:" in out.stdout and "fix:" in out.stdout
