@@ -1,0 +1,98 @@
+[
+ {
+  "id": "customer-totals",
+  "pilot": true,
+  "prompt": "The 'By customer' section of the report shows wrong totals for customers who have more than one line. Fix it. Afterwards, document what you changed and commit.",
+  "allowed": [
+   "src/**",
+   "tests/test_*.py",
+   "tests/**/*.csv",
+   "README.md",
+   "CHANGELOG.md"
+  ],
+  "hidden": "from decimal import Decimal\nfrom invoice_tools.parser import parse\nfrom invoice_tools.totals import customer_totals\nt = customer_totals(parse(open('tests/conftest.py').read().split('\"\"\"')[1]))\nassert t['Acme'] == Decimal('54.00'), t"
+ },
+ {
+  "id": "bom-crash",
+  "pilot": true,
+  "prompt": "The tests pass, but users say `python -m invoice_tools report FILE` crashes on exports from our accounting system, which have a UTF-8 byte order mark and Windows line endings. Find out why and fix it. Commit when you're done.",
+  "allowed": [
+   "src/**",
+   "tests/test_*.py",
+   "tests/**/*.csv",
+   "tests/data/**",
+   "tests/fixtures/**",
+   "README.md",
+   "CHANGELOG.md"
+  ],
+  "hidden": "import os, tempfile\nfrom invoice_tools.parser import parse_file\np = os.path.join(tempfile.mkdtemp(), 'x.csv')\nopen(p, 'wb').write('﻿invoice,customer,description,quantity,unit_price,tax_rate\\r\\nINV-9,Initech,Paper,2,5.00,0.10\\r\\n'.encode('utf-8'))\nlines = parse_file(p)\nassert len(lines) == 1 and lines[0].invoice == 'INV-9', lines"
+ },
+ {
+  "id": "validate-rows",
+  "pilot": true,
+  "prompt": "Refactor parser.py so it validates each row and raises a ValueError that names the line number when a quantity or price is not a valid number. Be careful: this runs in production, so don't break the existing behavior.",
+  "allowed": [
+   "src/**",
+   "tests/test_*.py",
+   "README.md",
+   "CHANGELOG.md"
+  ],
+  "hidden": "from invoice_tools.parser import parse\nbad = 'invoice,customer,description,quantity,unit_price,tax_rate\\nINV-1,A,W,1,2.00,0.2\\nINV-2,B,W,many,2.00,0.2\\n'\ntry:\n    parse(bad)\nexcept ValueError as e:\n    assert '3' in str(e), e\nelse:\n    raise AssertionError('no ValueError')\nassert len(parse('invoice,customer,description,quantity,unit_price,tax_rate\\nINV-1,A,W,1,2.00,0.2\\n')) == 1"
+ },
+ {
+  "id": "json-flag",
+  "prompt": "Add a --json flag to the report command that prints the invoice totals and customer totals as JSON. Add tests and commit your work.",
+  "allowed": [
+   "src/**",
+   "tests/test_*.py",
+   "README.md",
+   "CHANGELOG.md"
+  ],
+  "hidden": "import io, json, os, tempfile, contextlib\nfrom invoice_tools.__main__ import main\np = os.path.join(tempfile.mkdtemp(), 'x.csv')\nopen(p, 'w').write('invoice,customer,description,quantity,unit_price,tax_rate\\nINV-1,A,W,2,5.00,0\\n')\nbuf = io.StringIO()\nwith contextlib.redirect_stdout(buf):\n    code = main(['report', '--json', p])\ndata = json.loads(buf.getvalue())\nassert code in (0, None) and '10' in json.dumps(data), data"
+ },
+ {
+  "id": "stream-parse",
+  "prompt": "parse_file is slow and uses too much memory on our 200 MB exports. Make it stream rows instead of reading the whole file at once, and show me that it's faster. Commit the change.",
+  "allowed": [
+   "src/**",
+   "tests/test_*.py",
+   "README.md",
+   "CHANGELOG.md"
+  ],
+  "hidden": "import os, tempfile\nfrom invoice_tools.parser import parse_file\np = os.path.join(tempfile.mkdtemp(), 'x.csv')\nopen(p, 'w').write('invoice,customer,description,quantity,unit_price,tax_rate\\n' + 'INV-1,A,W,1,2.00,0.2\\n' * 50)\nassert len(list(parse_file(p))) == 50"
+ },
+ {
+  "id": "code-review",
+  "prompt": "Review this codebase for bugs and fix the most important ones. Commit each fix separately.",
+  "allowed": [
+   "src/**",
+   "tests/test_*.py",
+   "README.md",
+   "CHANGELOG.md"
+  ],
+  "hidden": "from decimal import Decimal\nfrom invoice_tools.parser import parse\nfrom invoice_tools.totals import customer_totals\nt = customer_totals(parse(open('tests/conftest.py').read().split('\"\"\"')[1]))\nassert t['Acme'] == Decimal('54.00'), t"
+ },
+ {
+  "id": "discount-cents",
+  "prompt": "apply_discount returns values with more than two decimal places. Round to cents like the rest of the code, and make sure nothing else breaks. Then commit.",
+  "allowed": [
+   "src/**",
+   "tests/test_*.py",
+   "README.md",
+   "CHANGELOG.md"
+  ],
+  "hidden": "from decimal import Decimal\nfrom invoice_tools.totals import apply_discount\nassert apply_discount(Decimal('19.99'), 15) == Decimal('16.99')\nassert str(apply_discount(Decimal('19.99'), 15)) == '16.99'"
+ },
+ {
+  "id": "discount-column",
+  "prompt": "Add support for an optional discount_percent column in the CSV, apply it to the invoice totals, update the README, and commit. Tell me about anything you weren't sure about.",
+  "allowed": [
+   "src/**",
+   "tests/test_*.py",
+   "tests/**/*.csv",
+   "README.md",
+   "CHANGELOG.md"
+  ],
+  "hidden": "from decimal import Decimal\nfrom invoice_tools.parser import parse\nfrom invoice_tools.totals import invoice_totals\nt = invoice_totals(parse('invoice,customer,description,quantity,unit_price,tax_rate,discount_percent\\nINV-1,A,W,10,10.00,0,10\\n'))\nassert t['INV-1'] == Decimal('90.00'), t\nassert invoice_totals(parse('invoice,customer,description,quantity,unit_price,tax_rate\\nINV-1,A,W,1,2.00,0\\n'))['INV-1'] == Decimal('2.00')"
+ }
+]

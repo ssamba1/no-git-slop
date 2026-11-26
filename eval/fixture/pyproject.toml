@@ -1,0 +1,9 @@
+[project]
+name = "invoice-tools"
+version = "0.4.1"
+description = "Parse, total and report on CSV invoices."
+requires-python = ">=3.9"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
