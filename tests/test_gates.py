@@ -23,6 +23,23 @@ def config(repo, **values):
 
 # ------------------------------------------------------------------ intent
 
+def test_naming_the_file_to_edit_does_not_cancel_a_request(repo):
+    # Live session: "Rewrite calc.py ... keep the old version" denied `cp calc.py calc_old.py`.
+    prompt(repo, "Rewrite app.py to use type hints. Keep the old version around in case we need it.")
+    assert decision(hook("bash", bash_event(repo, "cp app.py app_old.py"), repo)) == "ask"
+
+
+def test_naming_the_file_to_fix_still_allows_a_requested_script(repo):
+    prompt(repo, "Fix the crash in app.py. Write a quick script to try it first.")
+    assert decision(hook("write", write_event(repo, "debug_app.py"), repo)) == "ask"
+
+
+def test_naming_a_new_file_keeps_other_new_files_of_its_type_blocked(repo):
+    prompt(repo, "Write a summary to `docs/audit.md`.")
+    assert hook("write", write_event(repo, "docs/audit.md"), repo) is None
+    assert decision(hook("write", write_event(repo, "SUMMARY.md"), repo)) == "deny"
+
+
 def test_user_named_file_is_allowed(repo):
     prompt(repo, "Save the report to `reports/REPORT.md` please")
     assert hook("write", write_event(repo, "reports/REPORT.md"), repo) is None

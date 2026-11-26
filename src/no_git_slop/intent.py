@@ -123,9 +123,12 @@ def soften(session, rule_id: str, rel: str, decision: str) -> tuple:
         if category == "backup":
             return "ask", "user named this file; backups still need confirmation"
         return "ok", "user asked for this file"
-    # If the user named a specific file of this type, other files of the type stay blocked.
+    # If the user named a new file of this type, other new files of the type stay blocked.
+    # Named files that already exist are edit targets ("rewrite calc.py") and say nothing about new ones.
     ext = rel.rsplit(".", 1)[-1].lower() if "." in rel.rsplit("/", 1)[-1] else ""
-    if ext and any(p.lower().endswith("." + ext) for p in session.intent["paths"]):
+    root = getattr(session, "root", None)
+    if ext and any(p.lower().endswith("." + ext) and not (root is not None and (root / p).exists())
+                   for p in session.intent["paths"]):
         return decision, ""
     in_named_dir = any(glob_match(norm(rel), g) for g in session.intent.get("dirs", []))
     if category in session.intent["phrases"] or (in_named_dir and category == "doc"):
