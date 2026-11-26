@@ -144,6 +144,10 @@ A broken config falls back to the defaults. Hooks fail open on internal errors, 
 - Name-based rules will occasionally misfire. Approve with the code, or add an `allow` glob.
 - Nobody has measured stray-file rates for any tool, including this one. `no-git-slop stats` keeps a local record (never sent anywhere) so you can.
 
+## Does it work?
+
+Not proven yet. A preregistered pilot ([eval/](eval/README.md), 12 sessions, Claude Sonnet) found that on short, clear tasks Claude left **no** stray files with or without the plugin, so those tasks can't show an effect. Bulk `git add -A` did differ (2 of 3 sessions without the plugin, 0 of 3 with it), but the rules written into `CLAUDE.md` did as well, and the hooks never had to fire. What the hooks add over instructions is a hard stop when an agent ignores them, which is most likely in long sessions and on vague tasks; measuring that is the next evaluation.
+
 ## Research
 
 The design comes from three research rounds: [why rules fail and hooks work](docs/research/preventing-ai-git-slop.md), [the best-supported method](docs/research/perfect-method.md), and [a survey of similar tools on GitHub](docs/research/github-survey.md).

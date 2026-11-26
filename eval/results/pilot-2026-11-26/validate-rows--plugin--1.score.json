@@ -1,0 +1,26 @@
+{
+ "task": "validate-rows",
+ "arm": "plugin",
+ "trial": 1,
+ "seconds": 108,
+ "error": "",
+ "stray": 0,
+ "stray_committed": 0,
+ "stray_files": [],
+ "new_files": [],
+ "commits": 0,
+ "commits_conventional": 0,
+ "bulk_add_run": 0,
+ "uncommitted_changes": true,
+ "hidden_pass": true,
+ "cost_usd": 0.24489970000000003,
+ "turns": 11,
+ "model": "claude-sonnet-5-5",
+ "plugins": [
+  "no-git-slop",
+  "cc-plugin-agents-md",
+  "cc-plugin-telemetry",
+  "cc-plugin-plugin-authoring"
+ ],
+ "plugin_loaded": true
+}
