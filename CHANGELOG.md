@@ -20,6 +20,9 @@ All notable changes to this project are documented here. The format follows [Kee
 - Commands run through Claude Code's PowerShell tool are now checked like Bash commands; before, `git add -A` or `--no-verify` in PowerShell skipped no-git-slop entirely. `powershell -Command "..."` inside Bash is unwrapped too.
 - PowerShell .NET file calls (`[IO.File]::WriteAllText`, `AppendAllLines`, `Copy`, `Move`, `Delete`, `[IO.Directory]::CreateDirectory`, `New-Object IO.StreamWriter`) are checked like the matching cmdlets; before, they wrote report and backup files unchecked.
 - `no-git-slop init --hooks` prints an error instead of crashing when git cannot report the repo's `.git` folder.
+- A request in the prompt is honored when the prompt also names the file to edit. "Rewrite calc.py ... keep the old version around" used to deny `cp calc.py calc_old.py` because naming `calc.py` counted as naming the only `.py` file wanted; now only named files that don't exist yet count. Found in a live Claude Code session.
+- `check --deep`: tools installed in the project (`node_modules/.bin`) run on Windows (the `.cmd` shim is used instead of the sh script); a file list too long for one command line is reported as skipped instead of failing; ANSI color codes are stripped from tool output.
+- `check --deep` runs `aislop scan --changes` instead of `--staged`, which reported a clean pass on untracked files with real findings.
 - Hook events with Git Bash paths (`/d/repo`) resolve to the right repo, and `sh no-git-slop` / `sh ngs` work when run from inside `bin/`.
 
 ## [0.2.0] - 2026-11-24
