@@ -1,7 +1,7 @@
 # Install: pip install pre-commit
 #          pre-commit install --hook-type pre-commit --hook-type commit-msg --hook-type pre-push
 repos:
-  - repo: https://github.com/OWNER/no-git-slop
+  - repo: https://github.com/ssamba1/no-git-slop
     rev: v0.2.0
     hooks:
       - id: no-git-slop

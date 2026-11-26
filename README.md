@@ -53,7 +53,7 @@ If a framework's folder exists, its plan files are allowed where it expects them
 **Claude Code plugin** (needs Python 3.9 or newer as `python3`, `python` or `py`; works on Windows through Git Bash):
 
 ```
-/plugin marketplace add OWNER/no-git-slop
+/plugin marketplace add ssamba1/no-git-slop
 /plugin install no-git-slop@no-git-slop
 ```
 
@@ -62,15 +62,13 @@ The scratch folder is git-ignored automatically through `.git/info/exclude`, so 
 **Command line, git hooks and CI:**
 
 ```
-pip install "git+https://github.com/OWNER/no-git-slop"
+pip install "git+https://github.com/ssamba1/no-git-slop"
 no-git-slop init --hooks     # git-ignores .scratch/, installs pre-commit, commit-msg and pre-push hooks
 ```
 
 - pre-commit framework: copy [`templates/.pre-commit-config.yaml`](templates/.pre-commit-config.yaml).
 - GitHub Actions: copy [`templates/github-workflow.yml`](templates/github-workflow.yml). It checks new files, commit messages and the PR description.
 - Other agents (Cursor, Codex, Gemini): copy [`templates/AGENTS.md`](templates/AGENTS.md), and pipe their patches through `no-git-slop check-patch` (it reads Codex `*** Add File:` and git diff formats).
-
-Replace `OWNER` with the GitHub account that hosts this repo.
 
 ## Commands
 
