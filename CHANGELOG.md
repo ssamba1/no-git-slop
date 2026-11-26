@@ -4,9 +4,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-26
+
 ### Added
 
 - Hook adapters for Codex CLI, Gemini CLI and Cursor: `no-git-slop init --agent codex|gemini|cursor` writes the agent's hook config (merging with what is there), and `no-git-slop hook-agent <agent> <event>` runs the same checks as the Claude Code hooks, translated to each agent's input and output format. Agents without an "ask" decision get a deny that tells the agent to ask the user. Verified live with Codex 0.155.1; Gemini and Cursor against their documented formats.
+- `eval/`: a preregistered four-arm evaluation harness (baseline, plugin, rules as `CLAUDE.md`, placebo) with a deterministic scorer, decoy tests and the first pilot's results.
 
 ### Fixed
 
