@@ -18,7 +18,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install no-git-slop
-        run: pip install "git+https://github.com/ssamba1/no-git-slop@v0.3.0"
+        run: pip install "git+https://github.com/ssamba1/no-git-slop@v0.4.0"
 
       - name: New files in this PR
         run: no-git-slop check --range "origin/${{ github.base_ref }}...HEAD"

@@ -4,6 +4,8 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-27
+
 ### Added
 
 - `new-top-dir` (warn): a new file would create a top-level folder the repo doesn't have yet. Common folders (`src`, `tests`, `docs`, `.github` and others) pass.

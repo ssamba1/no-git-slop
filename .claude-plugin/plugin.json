@@ -1,6 +1,6 @@
 {
   "name": "no-git-slop",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Blocks stray files, backup copies, status-report markdown, bulk git adds and sloppy commit messages before they reach your repo.",
   "author": {
     "name": "ssamba1"

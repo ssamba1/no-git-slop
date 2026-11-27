@@ -2,7 +2,7 @@
 #          pre-commit install --hook-type pre-commit --hook-type commit-msg --hook-type pre-push
 repos:
   - repo: https://github.com/ssamba1/no-git-slop
-    rev: v0.3.0
+    rev: v0.4.0
     hooks:
       - id: no-git-slop
       - id: no-git-slop-commit-msg
