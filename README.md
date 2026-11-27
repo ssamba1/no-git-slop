@@ -1,74 +1,62 @@
 # no-git-slop
 
-Stop AI coding agents from cluttering your repo, without getting in your way.
+Keeps AI coding agents from making a mess of your repo: stray files, copies, report dumps, odd folders, bloated agent instructions, AI-style commit messages and code habits. It stays quiet unless something is wrong, and anything you ask for by name goes through.
 
-Writing "don't create summary files" in `CLAUDE.md` doesn't work: users report agents ignoring always-on rules, and Anthropic's own docs say anything that must happen every time belongs in a hook. no-git-slop is a Claude Code plugin that checks every route a file can take onto disk or into git history, *before* it happens. Each block tells Claude where the file should go instead. It says yes to you and no to the agent's leftovers: anything you ask for by name goes through.
+Rules in `CLAUDE.md` get ignored; Anthropic's docs say anything that must happen every time belongs in a hook. no-git-slop is a Claude Code plugin that checks every file write, shell command and commit *before* it lands, and tells the agent where things go instead.
 
 ## What it catches
 
-| Slop | Example | What Claude is told |
+| Problem | Example | Default |
 |---|---|---|
-| Status-report docs | `IMPLEMENTATION_SUMMARY.md`, `FIX_NOTES.md` | Report in chat; real docs go in README.md or docs/ |
-| Copies instead of edits | `parser_fixed.py`, `api_v2.py` next to `api.py`, `*.bak`, `NuclearFix/` | Edit the original in place |
-| Renamed copies | `helpers.py` that's 90% identical to `utils.py` | Reuse or edit the existing file |
-| Throwaway scripts | `debug_auth.py`, root-level `test_login.py` | Use `.scratch/` (git-ignored) or write a real test |
-| Junk | `.DS_Store`, `*.log`, `*.pyc` | Don't create; git-ignore it |
-| Shell-written slop | `cat > SUMMARY.md <<EOF`, `cp app.py app_backup.py`, `python -c "open('tmp.py','w')"`, inside `bash -c`, `env -C`, `sudo` | Same rules as the Write tool |
-| Bulk staging | `git add -A`, `.`, `:/`, `*`, `git commit -a`, `git add src/` with junk inside | Stage the files you changed, listed for you |
-| Bad commits | `updated stuff`, `fix: fix bug`, two changes in one subject, 40-file commits, agent-added `Signed-off-by` | Conventional Commits, one change each |
-| Bad pushes and PRs | pushing `wip` commits, force-push, PRs from `main`, "I hope this helps" in PR text, summary files in the PR | Fix before it leaves your machine |
-| Turning the guard off | `--no-verify`, `HUSKY=0`, `SKIP=...`, `core.hooksPath`, deleting `.git/hooks`, editing its config | Fix what the hooks report |
-| Unfinished work | your `verify` command (tests, lint) failing | Fix it without weakening tests |
+| Status-report docs | `IMPLEMENTATION_SUMMARY.md`, `FIX_NOTES.md` | block |
+| Copies instead of edits | `parser_fixed.py`, `api_v2.py` next to `api.py`, `*.bak`, `NuclearFix/`, a 90% copy of `utils.py` | block |
+| Throwaway scripts and junk | `debug_auth.py`, root `test_login.py`, `.DS_Store`, `*.log` | block |
+| Odd layout | a new top-level `analysis/` folder, `src/test_parser.py` when `tests/` exists | warn |
+| Agent leftovers in git | aider chat history, SpecStory transcripts, `CLAUDE.local.md`, `.claude/settings.local.json` | block on commit |
+| Bloated or stale agent instructions | `CLAUDE.md`/`AGENTS.md` over 200 lines, paths in them that no longer exist | told at session start |
+| Bulk staging | `git add -A`, `.`, `git commit -a` | block |
+| Bad commits | `updated stuff`, two changes in one subject, 40-file commits | block |
+| AI-style commit messages | em dashes, `citeturn` and `utm_source=chatgpt.com` leftovers, "I hope this helps" | block |
+| AI-style docs | spaced em dashes, chat phrases, hype words, ", highlighting its importance" | warn |
+| AI-style code | `// ... rest of the code unchanged` (block); comments about the chat, swallowed exceptions, `as any`, `# type: ignore`, skipped tests, debug leftovers (warn) | block / warn |
+| Turning the guard off | `--no-verify`, `HUSKY=0`, `core.hooksPath` | block |
 
-Editing existing files is never blocked. Git-ignored paths are never slop.
+Editing existing files is never blocked, git-ignored paths are never slop, and writing and code checks only look at the text just written, never at what was already there.
 
-## How it works
+## Light by design
 
-One rules engine, enforced at every checkpoint:
-
-1. **You ask** (UserPromptSubmit). It records files you name and what you ask for. "Save the report to `docs/audit.md`" allows exactly that file.
-2. **Claude writes** (PreToolUse on Write/Edit). New files are checked against the rules, including a near-duplicate check against existing files.
-3. **Claude runs a command** (PreToolUse on Bash and PowerShell). A static shell parser finds every file the command would create and every git and `gh` call inside it, unwrapping heredocs, pipes, `bash -c`, `powershell -Command`, `env`, `sudo`, `timeout` and `cd`, up to five levels deep. PowerShell blocks, here-strings, `$env:` assignments and file cmdlets (`Set-Content`, `Out-File`, `New-Item`, `Copy-Item`, `Remove-Item`) are read too, as are .NET file calls such as `[IO.File]::WriteAllText`, `[IO.Directory]::CreateDirectory` and `New-Object IO.StreamWriter`. Nothing is executed.
-4. **After a commit** (PostToolUse). It re-checks the commit that was actually made, which catches messages from `-F` files and editors.
-5. **Claude tries to finish** (Stop). It sweeps `git status` for clutter created this session and runs your `verify` command. It sends Claude back once with one list, and never blames Claude for files Claude Code itself creates (sandbox stubs, `tmpclaude-*`).
-6. **Outside Claude.** The same engine runs as pre-commit, commit-msg and pre-push hooks and in CI, so humans and other agents hit the same rules.
-
-Decisions are `deny`, `ask` (you confirm), `warn` (Claude is told, nothing blocked) or `off`, set per rule.
+- A new session gets six short rules (about 550 characters). Tests fail if that or the plugin's skill descriptions grow.
+- The 200-line limit is Anthropic's own guidance: "target under 200 lines per CLAUDE.md file" ([Claude Code docs](https://code.claude.com/docs/en/memory)).
+- Hooks import only what they need; the slow modules load only when a check needs them.
+- Warnings never stop the agent. Only clear junk is blocked, and every rule can be turned off.
 
 ## Saying yes to the user
 
-- **Name a file, get the file.** Paths and file names in your prompt are allowed for the session. Backups still ask for confirmation.
-- **Ask for a kind of file, get asked.** "Write a summary doc" turns blocks on report files into a confirmation prompt.
-- **Approve one file.** Every block includes a code like `ngs-3fa9c1`. Reply with it and that file is allowed.
-- **Session tokens.** Type `>ngs allow notes/*.md` to allow a pattern for the session, or `>ngs off` / `>ngs on` to pause the file and commit checks. Self-protection stays on.
+- **Name a file, get the file.** Paths in your prompt are allowed for the session.
+- **Approve one file.** Every block includes a code like `ngs-3fa9c1`; reply with it.
+- **Session tokens.** `>ngs allow notes/*.md` allows a pattern; `>ngs off` / `>ngs on` pauses the checks.
 
-Only text you type counts. Claude's own output can't approve anything.
-
-## Works with planning frameworks
-
-If a framework's folder exists, its plan files are allowed where it expects them: Spec Kit, OpenSpec, Superpowers, planning-with-files, HumanLayer, Task Master, ccpm, Ralph, claude-flow, compound-engineering, Kiro, Agent OS, BMAD and beads. Set `"plans": "ignore"` to keep plan files out of commits. `no-git-slop archive <file>` moves finished plans into a dated `archive/` folder next to them.
+Only text you type counts. The agent's own output can't approve anything.
 
 ## Install
 
-**Claude Code plugin** (needs Python 3.9 or newer as `python3`, `python` or `py`; works on Windows through Git Bash):
+**Claude Code** (needs Python 3.9+; Windows works through Git Bash):
 
 ```
 /plugin marketplace add ssamba1/no-git-slop
 /plugin install no-git-slop@no-git-slop
 ```
 
-The scratch folder is git-ignored automatically through `.git/info/exclude`, so your `.gitignore` isn't touched. `no-git-slop init` also adds it to `.gitignore` if you want it ignored for everyone who clones the repo.
-
-**Command line, git hooks and CI:**
+**Git hooks and CI**, so people and other tools hit the same rules:
 
 ```
 pip install "git+https://github.com/ssamba1/no-git-slop"
-no-git-slop init --hooks     # git-ignores .scratch/, installs pre-commit, commit-msg and pre-push hooks
+no-git-slop init --hooks     # pre-commit, commit-msg and pre-push hooks
 ```
 
-- pre-commit framework: copy [`templates/.pre-commit-config.yaml`](templates/.pre-commit-config.yaml).
-- GitHub Actions: copy [`templates/github-workflow.yml`](templates/github-workflow.yml). It checks new files, commit messages and the PR description.
-**Codex CLI, Gemini CLI and Cursor:** the same checks run through each agent's own hooks.
+Or copy [`templates/.pre-commit-config.yaml`](templates/.pre-commit-config.yaml) or [`templates/github-workflow.yml`](templates/github-workflow.yml).
+
+**Codex CLI, Gemini CLI and Cursor:**
 
 ```
 no-git-slop init --agent codex      # writes .codex/hooks.json
@@ -76,19 +64,7 @@ no-git-slop init --agent gemini     # adds hooks to .gemini/settings.json
 no-git-slop init --agent cursor     # writes .cursor/hooks.json
 ```
 
-Existing hook entries and settings are kept; running it again replaces only no-git-slop's own entries.
-
-| | Codex | Gemini CLI | Cursor |
-|---|---|---|---|
-| Shell commands | `PreToolUse` (Bash) | `BeforeTool` (`run_shell_command`) | `beforeShellExecution` |
-| New files | `PreToolUse` (`apply_patch`) | `BeforeTool` (`write_file`) | `preToolUse` (Write) |
-| Your prompt (named files, approval codes) | `UserPromptSubmit` | `BeforeAgent` | recorded, no reply possible |
-| Cleanup before finishing | `Stop` | `AfterAgent` (retry) | `stop` (follow-up message) |
-| "Ask" decisions | become deny + "ask the user" | same | kept for shell, deny for writes |
-
-**Codex needs two approvals.** The project must be trusted, and each hook must be approved in `/hooks`, because Codex records trust against the hook's exact definition and skips new or changed hooks until you approve them ([Codex hooks](https://learn.chatgpt.com/docs/hooks)). Re-running `init` changes nothing if the entries are the same, but an upgrade that changes the command line asks again.
-
-Tested: the Codex adapter in live `codex exec` sessions (0.155.1 on Windows). With hooks passed inline, the PreToolUse hook denied a `git add -A`. With the project's `.codex/hooks.json` (and `--dangerously-bypass-hook-trust` standing in for the `/hooks` approval), the SessionStart, UserPromptSubmit and Stop hooks ran, and the session-start reminder alone was enough for Codex to refuse `git add -A` before the hook had to. Gemini and Cursor were tested against the event formats in their docs, not in a live session. Other agents can also copy [`templates/AGENTS.md`](templates/AGENTS.md) or pipe patches through `no-git-slop check-patch`.
+Codex runs project hooks only after you trust the project and approve each hook in `/hooks` ([Codex hooks](https://learn.chatgpt.com/docs/hooks)). The Codex adapter was tested live; Gemini and Cursor only against their documented formats.
 
 ## Commands
 
@@ -96,24 +72,12 @@ Tested: the Codex adapter in live `codex exec` sessions (0.155.1 on Windows). Wi
 no-git-slop check [--staged | --range A..B] [--deep] [--json]   judge new files
 no-git-slop commit-msg FILE | commits A..B | push-check         commit and push checks
 no-git-slop pr --title T --body-file F                          self-check a PR before opening it
-no-git-slop check-patch < patch.diff                            judge new files in a patch
 no-git-slop index [dir]                                         list existing functions to reuse
 no-git-slop explain [rule]                                      what a rule does and how to change it
-no-git-slop stats                                               what the guard has been catching
-no-git-slop archive FILE                                        archive a finished plan file
 no-git-slop doctor                                              what it sees in this repo
-no-git-slop init [--hooks]                                      set up scratch folder and git hooks
 ```
 
-`ngs` is a short alias. `--json` output gives each finding a rule, decision, reason and fix, plus `next_steps`, for agents to act on.
-
-## Agents and skills
-
-- `/no-git-slop:tidy`: an end-of-task cleanup pass.
-- `/no-git-slop:commit`: split work into small Conventional Commits.
-- `/no-git-slop:learn`: tune the config from what the guard has been catching. Proposes changes; you approve.
-- `slop-minimizer` agent: strips changes the task doesn't need and keeps tests green. A separate pass works; asking the same agent to be minimal doesn't.
-- `slop-reviewer` agent: a fresh, read-only review for correctness, scope and reuse, never style. Every finding must come with evidence.
+`ngs` is a short alias. Skills: `/no-git-slop:tidy` (end-of-task cleanup), `/no-git-slop:commit` (split work into small commits), `/no-git-slop:learn` (tune the config). Agents: `slop-minimizer` (strip what the task didn't need) and `slop-reviewer` (read-only review).
 
 ## Configure
 
@@ -122,33 +86,26 @@ Optional `.no-git-slop.json` at the repo root ([full example](templates/.no-git-
 ```json
 {
   "profile": "default",
-  "rules": { "root-doc": "warn", "commit-multi": "off" },
+  "rules": { "new-top-dir": "off", "commit-em-dash": "warn" },
   "allow": ["docs/adr/*.md"],
   "verify": "npm test",
-  "attribution": "ignore"
+  "contextFileMaxLines": 200
 }
 ```
 
-- `profile`: `relaxed` (most blocks become questions), `default`, or `strict`.
-- `rules`: per-rule `deny | ask | warn | off`. Run `no-git-slop explain` for the list. Every rule can be turned off, including the report-file rule.
-- `verify`: a command that must pass before Claude finishes a turn that changed files. It gets at most `verifyMaxRetries` retries.
-- `attribution`: `ignore`, `forbid` (no AI co-author trailers) or `require` (an `Assisted-by:` trailer).
-- `integrations`: if [jscpd](https://github.com/kucherenko/jscpd), vulture, knip or aislop are installed, `check --deep` runs them. Each reports ran, unavailable or skipped, never a silent pass.
-- Budgets: `newFileBudget`, `commitFileBudget`, `commitLineBudget`, `diffBudget`, `nearDuplicateThreshold`, `prMaxFiles`.
+- `profile`: `relaxed`, `default` or `strict`. `rules`: per-rule `deny | ask | warn | off` (`no-git-slop explain` lists them).
+- `verify`: a command that must pass before the agent finishes a turn that changed files.
+- `plans`: framework plan files (Spec Kit, Superpowers, Task Master and others) stay out of commits by default; set `"commit"` to keep them.
+- `attribution`: `ignore`, `forbid` (no AI co-author trailers) or `require`.
 
-A broken config falls back to the defaults. Hooks fail open on internal errors, and the Stop sweep, git hooks and CI are the backstops. Claude editing the config asks you first.
+A broken config falls back to the defaults, and hooks fail open on internal errors.
 
 ## Limits
 
-- It can't make code good. It catches the repo-level mess, and points to the tools and agents for the rest.
-- Duplicated *logic* inside files needs jscpd or similar (`check --deep`). The built-in near-duplicate check compares whole files.
-- Shell commands built at runtime (variables, `$(...)`, globs) can't be read statically. Those files are caught by the Stop sweep.
-- Name-based rules will occasionally misfire. Approve with the code, or add an `allow` glob.
-- Real-world stray-file rates are still unmeasured for every tool, including this one; the lab evaluations above found none to prevent. `no-git-slop stats` keeps a local record (never sent anywhere) so you can.
-
-## Does it work?
-
-On short lab tasks, current Claude and Codex models rarely made these mistakes, so the measured benefit there is zero. no-git-slop is a cheap backstop for when they do: long sessions, weaker models, other agents and people. The evaluations and the research behind the design are on the [`research` branch](https://github.com/ssamba1/no-git-slop/tree/research).
+- It catches repo-level mess and the AI code habits above. It can't make code good; `check --deep` runs jscpd, vulture or knip if installed.
+- Shell commands built at runtime can't be read statically; the end-of-turn sweep catches those files.
+- The writing and code checks are patterns, so humans trip some warnings too. On 738 Python standard library files, scanned whole, none was blocked and 25 got a warning.
+- On short lab tasks, current Claude and Codex models rarely made these mistakes, so the measured benefit there is zero. It is a backstop for long sessions, weaker models, other agents and people. The evaluations and research are on the [`research` branch](https://github.com/ssamba1/no-git-slop/tree/research).
 
 ## License
 

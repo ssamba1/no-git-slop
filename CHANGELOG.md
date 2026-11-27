@@ -9,10 +9,15 @@ All notable changes to this project are documented here. The format follows [Kee
 - `new-top-dir` (warn): a new file would create a top-level folder the repo doesn't have yet. Common folders (`src`, `tests`, `docs`, `.github` and others) pass.
 - `misplaced-test` (warn): a `test_*.py` outside `tests/` when the repo has a `tests/` folder.
 - `agent-local` (deny): agent chat history and caches (aider, SpecStory) never enter git, and `CLAUDE.local.md` and `.claude/settings.local.json` can be created but not committed.
-- Session start says when `CLAUDE.md`, `AGENTS.md`, `GEMINI.md` or `.github/copilot-instructions.md` is longer than `contextFileMaxLines` (default 200), since those load into every session.
+- Session start says when `CLAUDE.md`, `AGENTS.md`, `GEMINI.md` or `.github/copilot-instructions.md` is longer than `contextFileMaxLines` (default 200, Anthropic's guidance for CLAUDE.md), or names files that no longer exist.
+- `commit-em-dash` and `ai-artifact` (deny): em dashes and chatbot leftovers (`citeturn`, `utm_source=chatgpt.com`, `[Your Name]` placeholders, knowledge-cutoff lines) in commit messages and PR text.
+- `doc-prose` (warn): AI-style writing in Markdown and text the agent just wrote.
+- `elided-code` (deny) and `code-slop` (warn): `// ... rest of the code unchanged` placeholders, and comments about the chat, swallowed exceptions, type and lint escape hatches, skipped tests and debug leftovers in code the agent just wrote.
 
 ### Changed
 
+- Hooks no longer import `difflib` and the integrations module unless a check needs them; the bash hook went from 166 ms to 55 ms median in a local benchmark.
+- The chatbot-phrase list drops "let me know if" and "feel free to", which human commits use, and `Co-authored-by` counts as AI attribution only with an agent address or model name (a Django contributor is named Claude).
 - `plans` defaults to `ignore`: framework plan files stay out of commits unless a project sets `"plans": "commit"`.
 - The evaluation harness and research notes moved to the [`research` branch](https://github.com/ssamba1/no-git-slop/tree/research), so `main` holds only the tool. Eval v2 and the Codex baseline are documented there.
 
