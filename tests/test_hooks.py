@@ -101,6 +101,37 @@ def test_commit_blocked_when_slop_is_staged(repo):
     assert decision(result) == "deny"
 
 
+def test_commit_blocked_for_agent_local_files(repo):
+    (repo / "CLAUDE.local.md").write_text("my notes\n")
+    assert decision(hook("write", write_event(repo, "CLAUDE.local.md"), repo)) is None  # creating it is fine
+    git(repo, "add", "CLAUDE.local.md")
+    assert decision(hook("bash", bash_event(repo, "git commit -m 'docs: add notes'"), repo)) == "deny"
+
+
+def test_session_start_flags_oversized_context_file(repo):
+    (repo / "AGENTS.md").write_text("rule\n" * 250)
+    text = hook("session-start", {"cwd": str(repo)}, repo)["hookSpecificOutput"]["additionalContext"]
+    assert "`AGENTS.md` is 250 lines (limit 200)" in text
+    (repo / "AGENTS.md").write_text("rule\n" * 20)
+    text = hook("session-start", {"cwd": str(repo)}, repo)["hookSpecificOutput"]["additionalContext"]
+    assert "AGENTS.md" not in text
+
+
+def test_session_start_text_stays_small(repo):
+    # The reminder loads into every new chat; keep it from growing unnoticed.
+    text = hook("session-start", {"cwd": str(repo)}, repo)["hookSpecificOutput"]["additionalContext"]
+    assert len(text) <= 700, len(text)
+
+
+def test_skill_and_agent_descriptions_stay_small():
+    # Their descriptions load into every session that has the plugin.
+    root = CLI.parents[1]
+    files = list(root.glob("skills/*/SKILL.md")) + list(root.glob("agents/*.md"))
+    total = sum(len(line) for f in files for line in f.read_text(encoding="utf-8").splitlines()
+                if line.startswith("description:"))
+    assert files and total <= 1200, total
+
+
 def test_stop_only_flags_files_created_this_session(repo):
     (repo / "old_debug.log").write_text("from before\n")
     start = hook("session-start", {"cwd": str(repo)}, repo)

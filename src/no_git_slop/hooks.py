@@ -33,7 +33,8 @@ REMINDER = (
     "- Commit messages: Conventional Commits, e.g. `fix(api): handle empty token`."
 )
 _FILE_RULES = {"junk-file", "backup-copy", "copy-folder", "version-copy", "near-duplicate",
-               "report-doc", "root-doc", "throwaway-script", "root-script", "file-budget"}
+               "report-doc", "root-doc", "throwaway-script", "root-script", "file-budget",
+               "new-top-dir", "misplaced-test"}
 
 
 def _emit(obj) -> None:
@@ -215,6 +216,25 @@ def on_post(event: dict) -> None:
 
 # ---------------------------------------------------------- SessionStart
 
+# Instruction files agents load into every session.
+CONTEXT_FILES = ("CLAUDE.md", ".claude/CLAUDE.md", "AGENTS.md", "GEMINI.md", ".github/copilot-instructions.md")
+
+
+def oversized_context_files(root: Path, max_lines: int) -> list:
+    """(path, lines) for always-loaded agent instruction files longer than max_lines (0 disables)."""
+    if max_lines <= 0:
+        return []
+    out = []
+    for rel in CONTEXT_FILES:
+        try:
+            n = (root / rel).read_text(encoding="utf-8", errors="replace").count("\n")
+        except OSError:
+            continue
+        if n > max_lines:
+            out.append((rel, n))
+    return out
+
+
 def on_session_start(event: dict) -> None:
     root = _root_for(event)
     if not root:
@@ -234,6 +254,11 @@ def on_session_start(event: dict) -> None:
         extra.append(f"- Planning files for {', '.join(presets)} are allowed in their usual folders.")
     if config.verify:
         extra.append(f"- Before finishing, `{config.verify}` must pass.")
+    big = oversized_context_files(root, config.contextFileMaxLines)
+    if big:
+        extra.append("- " + ", ".join(f"`{p}` is {n} lines" for p, n in big) +
+                     f" (limit {config.contextFileMaxLines}) and loads into every session. "
+                     "Don't add to it; move detail into docs/ and link it.")
     session.save()
     text = REMINDER.format(scratch=scratch) + ("\n" + "\n".join(extra) if extra else "")
     _emit({"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": text}})

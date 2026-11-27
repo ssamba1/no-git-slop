@@ -66,6 +66,12 @@ _JUNK_NAMES = {".ds_store", "thumbs.db", "desktop.ini", "nul", "npm-debug.log",
                "yarn-error.log", ".coverage", "core"}
 _JUNK_EXT = {".log", ".pyc", ".pyo", ".class", ".o"}
 _TEST_DIRS = {"tests", "test", "__tests__", "spec", "specs", "testing", "e2e", "fixtures"}
+# Top-level folders that are normal in most repos, so creating one is not a layout surprise.
+_COMMON_TOP_DIRS = _TEST_DIRS | {
+    "src", "lib", "docs", "doc", "scripts", "bin", "examples", "example", "assets", "public", "static",
+    "app", "apps", "packages", "pkg", "cmd", "internal", "tools", "config", "include", "benches",
+    "benchmarks", "migrations", "templates", ".github", ".vscode", ".devcontainer", ".claude",
+    ".codex", ".gemini", ".cursor", ".husky", "site", "web", "client", "server", "api"}
 
 # Guardrail files: agent edits need confirmation.
 GUARD_CONFIG_GLOBS = [
@@ -74,6 +80,12 @@ GUARD_CONFIG_GLOBS = [
     ".git/hooks/**", ".github/workflows/*slop*", ".claude/hookify.*",
 ]
 GUARD_STATE_GLOBS = [".git/no-git-slop/**", ".git/info/exclude"]
+
+# Agent transcripts and caches: never source, whoever writes them.
+AGENT_HISTORY_GLOBS = [".aider.chat.history.md", ".aider.input.history", ".aider.tags.cache.v*/*",
+                       ".specstory/history/**"]
+# Per-user agent files: an agent may create them, but they must not be committed.
+AGENT_LOCAL_GLOBS = ["CLAUDE.local.md", ".claude/settings.local.json"]
 
 
 def _matches(rel: str, globs) -> bool:
@@ -181,6 +193,17 @@ def _raw_rule(rel: str, root: Path, config: Config, subagent: bool) -> Optional[
             return Finding("root-script", "deny", f"`{rel}` is a loose script at the repo root. "
                            f"Put tests in the tests folder and one-off checks in `{scratch}/`.",
                            rel, actions=[f"write {scratch}/{name}"])
+
+    # 5. Layout: a new top-level folder, or a Python test outside the tests folder.
+    if len(parts) > 1 and parts[0].lower() not in _COMMON_TOP_DIRS and not (root / parts[0]).exists():
+        return Finding("new-top-dir", "warn", f"`{rel}` would create a new top-level folder "
+                       f"`{parts[0]}/`. Use an existing folder unless the user wants a new one.", rel)
+    if (ext == ".py" and (stem.startswith("test_") or stem.endswith("_test")) and len(parts) > 1
+            and not _in_tests_dir(parts)):
+        tests = next((d for d in ("tests", "test") if (root / d).is_dir()), None)
+        if tests:
+            return Finding("misplaced-test", "warn", f"`{rel}` is a test outside `{tests}/`. "
+                           f"Put it in `{tests}/` with the others.", rel, actions=[f"write {tests}/{name}"])
     return None
 
 
@@ -221,6 +244,15 @@ def near_duplicate(root: Path, rel: str, content: str, threshold: float):
     return None
 
 
+def _agent_local(rel: str, staging: bool) -> Optional[Finding]:
+    """Agent chat history, caches and per-user agent settings: fine on disk, never in git."""
+    local = _matches(rel, AGENT_HISTORY_GLOBS) or (staging and _matches(rel, AGENT_LOCAL_GLOBS))
+    if not local:
+        return None
+    return Finding("agent-local", "deny", f"`{rel}` is an agent's local history or per-user setting. "
+                   "Keep it out of git: add it to .gitignore or .git/info/exclude.", rel)
+
+
 def judge_new_file(rel: str, root: Path, config: Config, session=None, content: Optional[str] = None,
                    subagent: bool = False, check_ignored: bool = True) -> Finding:
     """Decide whether creating `rel` (repo-relative) is acceptable."""
@@ -241,7 +273,7 @@ def judge_new_file(rel: str, root: Path, config: Config, session=None, content: 
     if check_ignored and rel in gitutil.ignored(root, [rel]):
         return Finding("ok", "ok", "", rel, note="git-ignored")
 
-    finding = _raw_rule(rel, root, config, subagent)
+    finding = _agent_local(rel, staging=not check_ignored) or _raw_rule(rel, root, config, subagent)
     if finding is None and content is not None:
         match = near_duplicate(root, rel, content, config.nearDuplicateThreshold)
         if match:

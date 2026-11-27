@@ -7,7 +7,7 @@
   "deny": [],
   "scratchDir": ".scratch",
   "presets": "auto",
-  "plans": "commit",
+  "plans": "ignore",
   "commitStyle": "conventional",
   "maxSubjectLength": 72,
   "attribution": "ignore",

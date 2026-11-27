@@ -33,7 +33,9 @@ class Config:
     # Framework presets: "auto" (detect), "off", or a list of preset names.
     presets: object = "auto"
     # What to do with framework plan files at commit time: commit | ignore.
-    plans: str = "commit"
+    plans: str = "ignore"
+    # Session start warns when CLAUDE.md, AGENTS.md etc. pass this many lines (0 disables).
+    contextFileMaxLines: int = 200
     # Conventional Commits ("conventional") or no message checks ("off").
     commitStyle: str = "conventional"
     maxSubjectLength: int = 72

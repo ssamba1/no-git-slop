@@ -70,6 +70,21 @@ def test_allows_real_files(repo, path):
     assert decide(path, repo) == "ok"
 
 
+def test_new_top_level_folder_warns_once(repo):
+    assert decide("analysis/run.py", repo) == "warn"
+    assert decide("docs/guide.md", repo) == "ok"  # common folder
+    (repo / "analysis").mkdir()
+    assert decide("analysis/run.py", repo) == "ok"  # folder exists now
+
+
+def test_misplaced_python_test_warns_only_when_tests_folder_exists(repo):
+    assert decide("src/test_parser.py", repo) == "ok"
+    (repo / "tests").mkdir()
+    assert decide("src/test_parser.py", repo) == "warn"
+    assert decide("tests/test_parser.py", repo) == "ok"
+    assert decide("src/parser_test.go", repo) == "ok"  # Go keeps tests next to code
+
+
 def test_new_root_doc_asks(repo):
     assert decide("DESIGN.md", repo) == "ask"
     assert decide("TODO.md", repo) == "ask"

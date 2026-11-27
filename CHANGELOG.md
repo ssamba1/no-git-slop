@@ -6,13 +6,19 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Added
 
-- Evaluation v2 (`eval/v2/`): untracked local files planted in the tree. The pilot found no session in any arm that committed them, so the full run was not started; results and reasons are in `eval/v2/README.md`.
-- `eval/run.py --agent codex --codex-home <dir>` runs the baseline arm on Codex CLI with the operator's `AGENTS.md`, hooks and config kept out. A 9-session Codex baseline found no stray files and no bulk staging.
+- `new-top-dir` (warn): a new file would create a top-level folder the repo doesn't have yet. Common folders (`src`, `tests`, `docs`, `.github` and others) pass.
+- `misplaced-test` (warn): a `test_*.py` outside `tests/` when the repo has a `tests/` folder.
+- `agent-local` (deny): agent chat history and caches (aider, SpecStory) never enter git, and `CLAUDE.local.md` and `.claude/settings.local.json` can be created but not committed.
+- Session start says when `CLAUDE.md`, `AGENTS.md`, `GEMINI.md` or `.github/copilot-instructions.md` is longer than `contextFileMaxLines` (default 200), since those load into every session.
+
+### Changed
+
+- `plans` defaults to `ignore`: framework plan files stay out of commits unless a project sets `"plans": "commit"`.
+- The evaluation harness and research notes moved to the [`research` branch](https://github.com/ssamba1/no-git-slop/tree/research), so `main` holds only the tool. Eval v2 and the Codex baseline are documented there.
 
 ### Fixed
 
 - `init --agent codex` now says that Codex runs project hooks only after they are approved in `/hooks`, which is why `.codex/hooks.json` seemed not to load.
-- The evaluation runner excludes the operator's `~/.claude/CLAUDE.md` (`claudeMdExcludes`); v1 sessions loaded it.
 
 ## [0.3.0] - 2026-11-26
 
