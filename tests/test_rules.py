@@ -123,3 +123,39 @@ def test_bad_commit_messages(message):
 
 def test_commit_style_off():
     assert check_commit_message("whatever", Config(commitStyle="off")) == []
+
+
+def _rules(message, config=None):
+    return {f.rule for f in check_commit_message(message, config or Config())}
+
+
+def test_em_dash_in_commit_message_is_blocked():
+    em = chr(0x2014)
+    assert "commit-em-dash" in _rules(f"fix(api): handle empty token\n\nThe parser crashed {em} now it doesn't.")
+    assert "commit-em-dash" not in _rules("fix(api): handle empty token\n\nUse `a" + em + "b` as the separator.")
+
+
+def test_chatbot_leftovers_are_blocked():
+    assert "ai-artifact" in _rules("docs: add usage\n\nSee the guide citeturn0search1.")
+    assert "ai-artifact" in _rules("docs: add usage\n\nAs of my last training update this works.")
+    assert "ai-artifact" in _rules("docs: add contact\n\nContact [Your Name] for access.")
+
+
+def test_human_phrases_are_not_chatbot_residue():
+    assert "commit-prose" not in _rules("fix: handle empty token\n\nLet me know if this breaks your setup; feel free to revert.")
+
+
+def test_attribution_needs_an_agent_address_or_model_name():
+    forbid = Config(attribution="forbid")
+    assert "attribution" not in _rules("fix: handle empty token\n\nCo-authored-by: Claude Paroz <claude@example.com>", forbid)
+    assert "attribution" in _rules("fix: handle empty token\n\nCo-authored-by: Claude <noreply@anthropic.com>", forbid)
+    assert "attribution" in _rules("fix: handle empty token\n\nCo-authored-by: Claude Opus 5.5 <x@example.com>", forbid)
+
+
+def test_doc_findings_warn_on_ai_style_only():
+    from no_git_slop.commits import doc_findings
+    em = chr(0x2014)
+    assert doc_findings("## Usage\n\nRun `ngs check` before you push.\n", Config()) == []
+    found = doc_findings(f"## \U0001F680 Usage\n\nIt works {em} fast, highlighting its importance.\n", Config())
+    assert [f.decision for f in found] == ["warn"]
+    assert "em dash" in found[0].reason and "emoji" in found[0].reason and "trailing clause" in found[0].reason

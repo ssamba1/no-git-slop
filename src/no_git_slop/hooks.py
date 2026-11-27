@@ -211,6 +211,30 @@ def on_post(event: dict) -> None:
     session.save()
     if feedback:
         _emit({"decision": "block", "reason": feedback})
+        return
+    note = _written_text_note(root, tool, tool_input)
+    if note:
+        _emit({"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": note}})
+
+
+_DOC_EXT = (".md", ".mdx", ".markdown", ".rst", ".txt")
+
+
+def _written_text_note(root: Path, tool: str, tool_input: dict) -> Optional[str]:
+    """Warn about AI-style writing in the text just written; existing text is not judged."""
+    fp = str(tool_input.get("file_path") or "")
+    if tool not in ("Write", "Edit", "MultiEdit") or not fp.lower().endswith(_DOC_EXT):
+        return None
+    if tool == "Write":
+        text = tool_input.get("content") or ""
+    elif tool == "Edit":
+        text = tool_input.get("new_string") or ""
+    else:
+        text = "\n".join(e.get("new_string") or "" for e in tool_input.get("edits") or [])
+    from .commits import doc_findings
+
+    found = doc_findings(str(text), load_config(root))
+    return f"no-git-slop: {found[0].reason}" if found else None
 
 
 # ---------------------------------------------------------- SessionStart

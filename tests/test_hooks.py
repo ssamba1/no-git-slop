@@ -237,3 +237,14 @@ def test_powershell_commands(repo, command, expected):
 
 def test_bash_into_powershell(repo):
     assert decision(hook("bash", bash_event(repo, "powershell -Command \"git add -A\""), repo)) == "deny"
+
+
+def test_post_write_warns_on_ai_style_doc_text(repo):
+    (repo / "docs").mkdir()
+    event = {"cwd": str(repo), "tool_name": "Write", "tool_input": {
+        "file_path": str(repo / "docs" / "guide.md"), "content": "I hope this helps! Let's dive in."}}
+    (repo / "docs" / "guide.md").write_text(event["tool_input"]["content"])
+    out = hook("post", event, repo)
+    assert "reads as AI-written" in out["hookSpecificOutput"]["additionalContext"]
+    event["tool_input"]["content"] = "Run the tests before you push."
+    assert hook("post", event, repo) is None

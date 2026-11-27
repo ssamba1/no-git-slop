@@ -128,6 +128,18 @@ _RULES = [
     Rule("commit-prose", "warn", "commit", "Chatbot phrasing in commit message",
          "Phrases like 'This commit comprehensively...' read as pasted chat output.",
          "Write it plainly: what changed and why."),
+    Rule("ai-artifact", "deny", "commit", "Chatbot leftovers in a commit or PR",
+         "Citation tokens (citeturn), utm_source=chatgpt.com, [Insert ...] placeholders and "
+         "knowledge-cutoff disclaimers only come from pasted chat output.",
+         "Remove them."),
+    Rule("commit-em-dash", "deny", "commit", "Em dash in a commit message",
+         "Em dashes appeared in 0.01% to 0.06% of pre-ChatGPT commits in django, curl and cargo, "
+         "but in over a third of one agent-written repo's commits.",
+         "Use a period, comma, colon or parentheses."),
+    Rule("doc-prose", "warn", "doc", "AI-style writing in a document",
+         "Spaced em dashes, chat phrases, hype words, trailing ', highlighting...' clauses and "
+         "emoji headings read as AI-written; humans use some of them too, so this only warns.",
+         "Rewrite the flagged parts plainly."),
     # --- push and PRs ---------------------------------------------------------------
     Rule("push-force", "ask", "push", "Force push",
          "Force pushes rewrite shared history.",

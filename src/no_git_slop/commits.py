@@ -21,21 +21,41 @@ _VAGUE = {"update", "updates", "updated", "change", "changes", "changed", "fix",
 _MULTI_RE = re.compile(r"(;|\band (also )?(add|fix|update|remove|refactor|rename|move|drop|"
                        r"implement|create|delete|improve|change)\w*\b)", re.I)
 
-# AI co-author trailers and footers, matched on the tools' public noreply addresses.
+# AI co-author trailers and footers. A bare "Claude" is a person's name too (Django has a
+# contributor named Claude Paroz), so Co-authored-by needs the agent address or a model name.
 _AI_TRAILER_RE = re.compile(
-    r"^(co-authored-by|assisted-by|generated-by):.*(noreply@anthropic\.com|claude|copilot|"
-    r"cursor|codex|openai|devin|aider|gemini|windsurf|codeium|amp|sourcegraph)", re.I | re.M)
+    r"^(?:co-authored-by:.*(?:noreply@anthropic\.com|\bclaude (?:opus|sonnet|haiku|fable|code)\b|"
+    r"\bcopilot\b|\bchatgpt\b|openai|\bcodex\b|\bcursor(?:agent)?\b|\bgemini\b|\bdevin\b|\baider\b|"
+    r"\bwindsurf\b|codeium|sourcegraph)|(?:assisted|generated)-by:\s*\S)", re.I | re.M)
 _AI_FOOTER_RE = re.compile(r"generated with \[?(claude code|copilot|cursor|codex|aider)", re.I)
 _ASSISTED_RE = re.compile(r"^(assisted-by|co-authored-by):\s*\S", re.I | re.M)
 _SIGNOFF_RE = re.compile(r"^signed-off-by:", re.I | re.M)
 
-# Phrases that mark pasted chatbot output. Original list, detect-only by default.
+# Phrases that mark pasted chatbot output. "let me know if" and "feel free to" are left out:
+# human Cargo PR bodies use them (measured on 13.5k pre-ChatGPT commits).
 RESIDUE = [
-    r"\bi hope this helps\b", r"\blet me know if\b", r"\bfeel free to\b", r"\bcertainly!",
-    r"\bgreat question\b", r"\bas an ai\b", r"\bhere(?:'s| is) (?:a |the )?(?:summary|breakdown)\b",
+    r"\bi hope this helps\b", r"\bcertainly!", r"\babsolutely!", r"\bgreat question\b",
+    r"\byou'?re absolutely right\b", r"\bhere(?:'s| is) (?:a |the )?(?:summary|breakdown)\b",
     r"\bi(?:'ve| have) (?:successfully )?(?:implemented|completed|created|updated)\b",
     r"\bin summary,", r"\bin conclusion,", r"\bhappy coding\b", r"\bwould you like me to\b",
+    r"\bit(?:'s| is) (?:important|worth|essential) (?:to note|noting)\b", r"\bit should be noted\b",
+    r"\blet'?s dive in\b", r"\blet'?s break (?:this|it) down\b", r"\bhere'?s the thing\b",
+    r"\ball \d+ tests? (?:pass|passing|passed)\b",
 ]
+# Text a chatbot leaves behind: citation tokens, tracking params, unfilled placeholders,
+# knowledge-cutoff disclaimers. Never in human-written history.
+_ARTIFACT_RE = re.compile(
+    r"citeturn\d|oai_citation|contentReference\[oaicite|utm_source=(?:chatgpt\.com|copilot\.com)"
+    r"|\bas an ai(?: language model)?\b|\[(?:insert|your name|your company)[^\]]*\]|\b20\d\d-xx-xx\b"
+    r"|\bas of my (?:last|latest) (?:training|update|knowledge)|\bmy training data\b"
+    r"|\bas of my knowledge cutoff\b", re.I)
+_EM_DASH = chr(0x2014)
+# ", highlighting its importance." style trailers; docs only (untell measured 0.971 precision).
+_TRAILER_CLAUSE_RE = re.compile(
+    r",\s+(?:under(?:scoring|lining)|highlighting|showcasing|emphasizing|cementing|solidifying"
+    r"|paving the way)\b[^.!?\n]*[.!?]", re.I)
+_EMOJI_HEADING_RE = re.compile("(?m)^#{1,6}\\s*[\U0001F300-\U0001FAFF☀-➿]")
+_CODE_RE = re.compile(r"```.*?```|`[^`\n]*`", re.S)
 HYPE = [
     r"\bcomprehensive(ly)?\b", r"\brobust\b", r"\bseamless(ly)?\b", r"\bleverag(e|es|ing)\b",
     r"\bcutting[- ]edge\b", r"\bstate[- ]of[- ]the[- ]art\b", r"\bproduction[- ]ready\b",
@@ -101,8 +121,41 @@ def check_commit_message(message: str, config: Config, by_agent: bool = False) -
         _add(out, config, "signoff", "Don't add Signed-off-by for the user; a sign-off is the "
              "human's own certification.")
     out.extend(check_attribution(body, config))
-    prose = prose_findings(body, "commit-prose", config)
-    out.extend(prose)
+    text = _CODE_RE.sub("", body)
+    artifact = _ARTIFACT_RE.search(text)
+    if artifact:
+        _add(out, config, "ai-artifact", f"The message contains chatbot leftovers "
+             f"(`{artifact.group(0)}`). Remove them.")
+    if _EM_DASH in text:
+        _add(out, config, "commit-em-dash", "The message uses an em dash, a strong sign of AI "
+             "writing in commit history. Use a period, comma, colon or parentheses.")
+    out.extend(prose_findings(text, "commit-prose", config))
+    return out
+
+
+def doc_findings(text: str, config: Config) -> List[Finding]:
+    """AI-style tells in a Markdown or text document. Warnings only: humans write docs like this too."""
+    text = _CODE_RE.sub("", text)
+    found = []
+    m = _ARTIFACT_RE.search(text)
+    if m:
+        found.append(f"chatbot leftover `{m.group(0)}`")
+    n = text.count(" " + _EM_DASH + " ")
+    if n:
+        found.append(f"{n} spaced em dash{'es' if n > 1 else ''}")
+    residue = sorted({m.group(0).lower() for m in _RESIDUE_RE.finditer(text)})
+    hype = sorted({m.group(0).lower() for m in _HYPE_RE.finditer(text)})
+    if residue or len(hype) >= 2:
+        found.append("phrases " + ", ".join(f"'{p}'" for p in (residue + hype)[:4]))
+    clause = _TRAILER_CLAUSE_RE.search(text)
+    if clause:
+        found.append(f"a trailing clause like `{clause.group(0).strip()[:50]}`")
+    if _EMOJI_HEADING_RE.search(text):
+        found.append("emoji in headings")
+    out: List[Finding] = []
+    if found:
+        _add(out, config, "doc-prose", "This reads as AI-written: " + "; ".join(found) +
+             ". Rewrite those parts plainly.")
     return out
 
 
@@ -136,7 +189,13 @@ def check_pr(title: str, body: str, config: Config, head: str = "", default_bran
     if head and default_branch and head == default_branch:
         _add(out, config, "pr-from-default", f"This PR would come from `{head}`, the default "
              "branch. Create a feature branch first (`git switch -c <name>`).")
-    text = f"{title}\n{body}"
+    text = _CODE_RE.sub("", f"{title}\n{body}")
+    artifact = _ARTIFACT_RE.search(text)
+    if artifact:
+        _add(out, config, "ai-artifact", f"PR text contains chatbot leftovers "
+             f"(`{artifact.group(0)}`). Remove them.")
+    if _AI_FOOTER_RE.search(text) and config.attribution == "forbid":
+        _add(out, config, "attribution", "This project forbids 'Generated with' footers in PR text.")
     residue = sorted({m.group(0).lower() for m in _RESIDUE_RE.finditer(text)})
     if residue:
         _add(out, config, "pr-residue", "PR text contains chat residue: "
