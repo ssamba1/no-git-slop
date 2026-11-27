@@ -19,7 +19,6 @@ from .commits import check_commit_message
 from .config import Config, load_config
 from .findings import Finding, worst
 from .gates import evaluate_bash, evaluate_write, rel_to, state_path_finding
-from .integrations import run_all, run_verify
 from .presets import active_presets, is_harness_artifact
 from .rules import judge_new_file
 
@@ -302,6 +301,8 @@ def on_stop(event: dict) -> None:
     notes: List[str] = []
 
     if config.verify and _changed_this_session(root, session):
+        from .integrations import run_verify
+
         result = run_verify(root, config.verify, config.verifyTimeout)
         if result["status"] == "ran" and result["exit"] != 0:
             session.data["verify_failures"] = session.data.get("verify_failures", 0) + 1
@@ -325,6 +326,8 @@ def on_stop(event: dict) -> None:
                             "(the slop-minimizer agent can help) or split the work."))
 
     if config.integrationsAtStop:
+        from .integrations import run_all
+
         for r in run_all(root, config.integrations):
             if r["status"] == "ran" and r.get("exit"):
                 soft.append(Finding(f"tool:{r['name']}", "warn", f"{r['name']} reported "

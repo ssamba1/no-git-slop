@@ -123,6 +123,14 @@ def test_session_start_text_stays_small(repo):
     assert len(text) <= 700, len(text)
 
 
+def test_hook_path_skips_slow_imports():
+    # Hooks run on every tool call; difflib alone cost ~200 ms on Windows.
+    code = ("import sys; sys.path.insert(0, sys.argv[1]); import no_git_slop.hooks; "
+            "print(sorted(m for m in ('difflib', 'argparse', 'no_git_slop.integrations') if m in sys.modules))")
+    out = subprocess.run([sys.executable, "-c", code, str(CLI.parents[1] / "src")], capture_output=True, text=True)
+    assert out.stdout.strip() == "[]", out.stdout + out.stderr
+
+
 def test_skill_and_agent_descriptions_stay_small():
     # Their descriptions load into every session that has the plugin.
     root = CLI.parents[1]

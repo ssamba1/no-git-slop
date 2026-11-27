@@ -7,7 +7,6 @@ edits to guardrail files are checked by `protected_finding`).
 
 from __future__ import annotations
 
-import difflib
 import os
 import re
 from pathlib import Path, PurePosixPath
@@ -235,6 +234,8 @@ def near_duplicate(root: Path, rel: str, content: str, threshold: float):
             old = (root / cand).read_text(encoding="utf-8", errors="replace").splitlines()
         except OSError:
             continue
+        import difflib  # ~200 ms to import on Windows; only this check needs it
+
         sm = difflib.SequenceMatcher(None, new_lines, old, autojunk=False)
         if sm.real_quick_ratio() < threshold or sm.quick_ratio() < threshold:
             continue
