@@ -148,13 +148,7 @@ A broken config falls back to the defaults. Hooks fail open on internal errors, 
 
 ## Does it work?
 
-Not measurably, for Claude on short tasks, as far as two preregistered evaluations can tell. In 42 headless sessions (Claude Sonnet and Haiku 5.5, with and without the plugin), Claude left **no** stray files, even on tasks that invite scratch scripts and copies ([v1](eval/README.md)). Sonnet often ran `git add -A`, but only in clean trees, where it was harmless. When the tree held untracked local files (a customer export, a `.env`, notes), no session in any arm bulk-added or committed them, plugin or not ([v2](eval/v2/README.md)). Codex (`gpt-6-sol`, no plugin) did the same in 9 more sessions: no stray files, and it staged by path every time, even in a clean tree.
-
-So the measured benefit on short tasks is zero, for Claude and for Codex, because neither made the mistakes. What no-git-slop offers is a hard stop for when an agent does: long sessions, older or weaker models, other agents through the Codex, Gemini and Cursor adapters, and people through the git hooks and CI. None of those has been measured yet.
-
-## Research
-
-The design comes from three research rounds: [why rules fail and hooks work](docs/research/preventing-ai-git-slop.md), [the best-supported method](docs/research/perfect-method.md), and [a survey of similar tools on GitHub](docs/research/github-survey.md).
+On short lab tasks, current Claude and Codex models rarely made these mistakes, so the measured benefit there is zero. no-git-slop is a cheap backstop for when they do: long sessions, weaker models, other agents and people. The evaluations and the research behind the design are on the [`research` branch](https://github.com/ssamba1/no-git-slop/tree/research).
 
 ## License
 
