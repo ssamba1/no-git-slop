@@ -140,6 +140,13 @@ _RULES = [
          "Spaced em dashes, chat phrases, hype words, trailing ', highlighting...' clauses and "
          "emoji headings read as AI-written; humans use some of them too, so this only warns.",
          "Rewrite the flagged parts plainly."),
+    Rule("elided-code", "deny", "code", "Code replaced by a placeholder comment",
+         "'// ... rest of the code unchanged' in an edit means real code was deleted.",
+         "Restore the code the comment stands in for."),
+    Rule("code-slop", "warn", "code", "AI-style habits in new code",
+         "Comments about the chat or edit history, swallowed exceptions, type and lint escape "
+         "hatches, skipped tests and debug leftovers are the habits AI-slop linters agree on.",
+         "Fix the flagged lines; the hook names each one."),
     # --- push and PRs ---------------------------------------------------------------
     Rule("push-force", "ask", "push", "Force push",
          "Force pushes rewrite shared history.",

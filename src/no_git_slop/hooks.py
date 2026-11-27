@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import sys
 from pathlib import Path
 from typing import List, Optional
@@ -212,29 +213,46 @@ def on_post(event: dict) -> None:
     if feedback:
         _emit({"decision": "block", "reason": feedback})
         return
-    note = _written_text_note(root, tool, tool_input)
-    if note:
+    block, note = _written_text_review(root, tool, tool_input)
+    if block:
+        _emit({"decision": "block", "reason": block})
+    elif note:
         _emit({"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": note}})
 
 
 _DOC_EXT = (".md", ".mdx", ".markdown", ".rst", ".txt")
 
 
-def _written_text_note(root: Path, tool: str, tool_input: dict) -> Optional[str]:
-    """Warn about AI-style writing in the text just written; existing text is not judged."""
+def _written_text_review(root: Path, tool: str, tool_input: dict):
+    """(block reason, note) for AI-style writing or code in the text just written.
+    Only the new text is judged, never what was already in the file."""
     fp = str(tool_input.get("file_path") or "")
-    if tool not in ("Write", "Edit", "MultiEdit") or not fp.lower().endswith(_DOC_EXT):
-        return None
+    if tool not in ("Write", "Edit", "MultiEdit") or not fp:
+        return None, None
     if tool == "Write":
         text = tool_input.get("content") or ""
     elif tool == "Edit":
         text = tool_input.get("new_string") or ""
     else:
         text = "\n".join(e.get("new_string") or "" for e in tool_input.get("edits") or [])
-    from .commits import doc_findings
+    text = str(text)
+    config = load_config(root)
+    if fp.lower().endswith(_DOC_EXT):
+        from .commits import doc_findings
 
-    found = doc_findings(str(text), load_config(root))
-    return f"no-git-slop: {found[0].reason}" if found else None
+        found = doc_findings(text, config)
+        return None, (f"no-git-slop: {found[0].reason}" if found else None)
+    from .codestyle import code_findings
+
+    hard, soft = code_findings(fp.replace("\\", "/"), text)
+    block = note = None
+    if hard and config.mode("elided-code") in ("deny", "ask"):
+        block = "no-git-slop: " + "; ".join(hard) + "."
+    elif hard and config.mode("elided-code") == "warn":
+        soft = hard + soft
+    if soft and config.mode("code-slop") != "off":
+        note = "no-git-slop: in the code just written, " + "; ".join(soft[:3]) + "."
+    return block, note
 
 
 # ---------------------------------------------------------- SessionStart
@@ -256,6 +274,23 @@ def oversized_context_files(root: Path, max_lines: int) -> list:
         if n > max_lines:
             out.append((rel, n))
     return out
+
+
+_CONTEXT_PATH_RE = re.compile(r"`((?:\.?[\w.-]+/)+[\w.-]+\.\w+)`")
+
+
+def stale_context_paths(root: Path, limit: int = 3) -> list:
+    """Backticked file paths in agent instruction files that no longer exist."""
+    out = []
+    for rel in CONTEXT_FILES:
+        try:
+            text = (root / rel).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for p in _CONTEXT_PATH_RE.findall(text):
+            if not p.startswith("~") and not (root / p).exists() and p not in out:
+                out.append(p)
+    return out[:limit]
 
 
 def on_session_start(event: dict) -> None:
@@ -282,6 +317,10 @@ def on_session_start(event: dict) -> None:
         extra.append("- " + ", ".join(f"`{p}` is {n} lines" for p, n in big) +
                      f" (limit {config.contextFileMaxLines}) and loads into every session. "
                      "Don't add to it; move detail into docs/ and link it.")
+    stale = stale_context_paths(root)
+    if stale:
+        extra.append("- Agent instructions mention files that don't exist: "
+                     + ", ".join(f"`{p}`" for p in stale) + ". Fix or remove those references.")
     session.save()
     text = REMINDER.format(scratch=scratch) + ("\n" + "\n".join(extra) if extra else "")
     _emit({"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": text}})

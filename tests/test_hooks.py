@@ -248,3 +248,13 @@ def test_post_write_warns_on_ai_style_doc_text(repo):
     assert "reads as AI-written" in out["hookSpecificOutput"]["additionalContext"]
     event["tool_input"]["content"] = "Run the tests before you push."
     assert hook("post", event, repo) is None
+
+
+def test_session_start_flags_missing_paths_in_agent_instructions(repo):
+    (repo / "AGENTS.md").write_text("Entry point is `app.py`. Config lives in `config/settings.toml`.\n")
+    text = hook("session-start", {"cwd": str(repo)}, repo)["hookSpecificOutput"]["additionalContext"]
+    assert "don't exist: `config/settings.toml`." in text
+    (repo / "config").mkdir()
+    (repo / "config" / "settings.toml").write_text("")
+    text = hook("session-start", {"cwd": str(repo)}, repo)["hookSpecificOutput"]["additionalContext"]
+    assert "don't exist" not in text
